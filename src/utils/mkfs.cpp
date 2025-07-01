@@ -108,16 +108,16 @@ bool is_2_power_of(unsigned long long x)
     return false;
 }
 
-void make_head(const sector_t sectors, const uint64_t block_size)
+cfs_head_t make_head(const sector_t sectors, const uint64_t block_size)
 {
     cfs_head_t head{};
     head.magick = head.magick_ = cfs_magick_number;
 
     // ────── basic sanity checks ──────
-    assert_throw(block_size > 512 && block_size % 512 == 0 && is_2_power_of(block_size / 512),
+    assert_throw(block_size > SECTOR_SIZE && block_size % SECTOR_SIZE == 0 && is_2_power_of(block_size / SECTOR_SIZE),
             "Block size not aligned");
 
-    head.static_info.block_over_sector = block_size / 512;
+    head.static_info.block_over_sector = block_size / SECTOR_SIZE;
     head.static_info.block_size        = block_size;
     head.static_info.sectors           = sectors;
     head.static_info.blocks            = sectors / head.static_info.block_over_sector;
@@ -143,7 +143,7 @@ void make_head(const sector_t sectors, const uint64_t block_size)
     const uint64_t data_blocks = k;
 
     // ────── compute bitmap & attribute sizes with correct precedence ──────
-    const uint64_t bytes_per_block = scale * 512ULL;
+    const uint64_t bytes_per_block = scale * SECTOR_SIZE;
     const uint64_t bits_per_block  = bytes_per_block * 8ULL;
 
     const uint64_t data_block_bitmap = ceil_div(data_blocks, bits_per_block);
@@ -173,15 +173,14 @@ void make_head(const sector_t sectors, const uint64_t block_size)
     block_offset += journaling_section_size;
 
     // ────── checksum & timestamps ──────
-    CRC64 checksum;
-    checksum.update(reinterpret_cast<uint8_t*>(&head.static_info), sizeof(head.static_info));
-    head.info_table_checksum = head.info_table_checksum_ = checksum.get_checksum();
+    head.info_table_checksum = head.info_table_checksum_ = hashcrc64(head.static_info);
 
-    const auto now = std::chrono::steady_clock::now().time_since_epoch().count();
+    const auto now = get_timestamp();
     head.runtime_info.mount_timestamp = head.runtime_info.last_check_timestamp = now;
 
     auto region_gen = [](const uint64_t start, const uint64_t end) {
-        return "[" + std::to_string(start) + ", " + std::to_string(end) + ") (" + std::to_string(end - start) + " blocks)";
+        return color::color(1,5,4) + "[" + std::to_string(start) + ", " + std::to_string(end) + ")" + color::color(3,3,3)
+        + " (" + std::to_string(end - start) + " block<s>)" + color::no_color();
     };
 
     const auto data_block_attribute = region_gen(head.static_info.data_block_attribute_table_start, head.static_info.data_block_attribute_table_end);
@@ -195,30 +194,54 @@ void make_head(const sector_t sectors, const uint64_t block_size)
     verbose_log("               ", head.static_info.blocks, " blocks (addressable region: ", region_gen(0, head.static_info.blocks), ")");
     verbose_log(" Block size:   ", head.static_info.block_size, " bytes (", head.static_info.block_over_sector, " sectors)");
     verbose_log("  ─────────────────────────────┬───────────────────────────────────────────────────────────────────────");
-    verbose_log("              FILE SYSTEM HEAD │ BLOCK: ", region_gen(0, 1));
+    verbose_log(color::color(5,5,5), "              FILE SYSTEM HEAD │ BLOCK: ", region_gen(0, 1));
     verbose_log("  ─────────────────────────────┼───────────────────────────────────────────────────────────────────────");
-    verbose_log("            DATA REGION BITMAP │ BLOCK: ", data_bitmap_region);
+    verbose_log(color::color(5,5,5), "            DATA REGION BITMAP │ BLOCK: ", data_bitmap_region);
     verbose_log("  ─────────────────────────────┼───────────────────────────────────────────────────────────────────────");
-    verbose_log("        DATA BITMAP BACKUP MAP │ BLOCK: ", data_bitmap_backup_region);
+    verbose_log(color::color(5,5,5), "        DATA BITMAP BACKUP MAP │ BLOCK: ", data_bitmap_backup_region);
     verbose_log("  ─────────────────────────────┼───────────────────────────────────────────────────────────────────────");
-    verbose_log("          DATA BLOCK ATTRIBUTE │ BLOCK: ", data_block_attribute);
+    verbose_log(color::color(5,5,5), "          DATA BLOCK ATTRIBUTE │ BLOCK: ", data_block_attribute);
     verbose_log("  ─────────────────────────────┼───────────────────────────────────────────────────────────────────────");
-    verbose_log("                    DATA BLOCK │ BLOCK: ", data_region);
+    verbose_log(color::color(5,5,5), "                    DATA BLOCK │ BLOCK: ", data_region);
     verbose_log("  ─────────────────────────────┼───────────────────────────────────────────────────────────────────────");
-    verbose_log("                JOURNAL REGION │ BLOCK: ", journal_region);
+    verbose_log(color::color(5,5,5), "                JOURNAL REGION │ BLOCK: ", journal_region);
     verbose_log("  ─────────────────────────────┼───────────────────────────────────────────────────────────────────────");
-    verbose_log("       FILE SYSTEM HEAD BACKUP │ BLOCK: ", region_gen(block_offset, block_offset + 1));
+    verbose_log(color::color(5,5,5), "       FILE SYSTEM HEAD BACKUP │ BLOCK: ", region_gen(block_offset, block_offset + 1));
     verbose_log("  ─────────────────────────────┴───────────────────────────────────────────────────────────────────────");
     verbose_log("=======================================================================================================");
 
-    // clear bitmap regions
+    return head;
+}
+
+void clear_entries(basic_io_t & io, cfs_head_t & head)
+{
+    auto clear_region = [&](const uint64_t start, const uint64_t end)->uint64_t
+    {
+        CRC64 hash_empty;
+        sector_data_t data{};
+        for (uint64_t i = start; i < end; ++i) {
+            for (uint64_t j = 0; j < head.static_info.block_over_sector; j++) {
+                // debug_log("Scrubbing sector ", j + i * head.static_info.block_over_sector);
+                io.write(data, j + i * head.static_info.block_over_sector);
+                hash_empty.update(data.data(), data.size());
+            }
+        }
+
+        return hash_empty.get_checksum();
+    };
+
+    clear_region(0, 1);
+    clear_region(head.static_info.blocks - 1, head.static_info.blocks);
+    head.runtime_info.data_bitmap_checksum = clear_region(head.static_info.data_bitmap_start, head.static_info.data_bitmap_end);
+    clear_region(head.static_info.data_bitmap_backup_start, head.static_info.data_bitmap_backup_end);
+    clear_region(head.static_info.data_block_attribute_table_start, head.static_info.data_block_attribute_table_end);
+    clear_region(head.static_info.journal_start, head.static_info.journal_end);
 }
 
 int mkfs_main(int argc, char **argv)
 {
     try
     {
-        make_head(-1, 1024*32);
         arg_parser args(argc, argv, mkfs::Arguments);
         auto contains = [&args](const std::string & name, std::string & val)->bool
         {
@@ -256,12 +279,37 @@ int mkfs_main(int argc, char **argv)
         }
 
         ////////////////////////////////////////////////////////////////////////////////////////////////////////////////
-    }
-    catch (const std::exception & e)
-    {
+        uint64_t block_size = 4096;
+        if (contains("block", arg_val)) {
+            try {
+                block_size = std::strtoull(arg_val.c_str(), nullptr, 10);
+            } catch (const std::exception &) {
+                throw runtime_error("Invalid block size: " + arg_val);
+            }
+        }
+
+        if (contains("path", arg_val))
+        {
+            verbose_log("Formatting disk ", arg_val);
+            basic_io_t io;
+            io.open(arg_val.c_str());
+            auto head = make_head(io.get_file_sectors(), block_size);
+            verbose_log("Clearing entries");
+            clear_entries(io, head);
+            head.runtime_info.last_check_timestamp = get_timestamp();
+            sector_data_t data{};
+            std::memcpy(data.data(), &head, sizeof(head));
+            verbose_log("Writing filesystem head");
+            io.write(data, 0);
+            io.write(data, head.static_info.sectors - 1);
+            io.close();
+            verbose_log("done");
+            return EXIT_SUCCESS;
+        }
+
+        throw runtime_error("No path specified");
+    } catch (const std::exception &e) {
         error_log(e.what());
         return EXIT_FAILURE;
     }
-
-    return EXIT_SUCCESS;
 }

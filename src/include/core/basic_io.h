@@ -23,6 +23,7 @@
 
 #include <cstdint>
 #include <array>
+#include <mutex>
 
 /// sector index type
 using sector_t = unsigned long long int;
@@ -33,13 +34,14 @@ class basic_io_t
 {
     int fd = -1; /// file descriptor
     sector_t file_sectors = 0; /// sector count, sector is always 512 bytes
+    std::mutex mutex; /// thread safety
 
 public:
     basic_io_t() = default;
     ~basic_io_t() { close(); }
     void open(const char *file_name);
     void close();
-    void read(sector_data_t & buffer, sector_t) const;
+    void read(sector_data_t & buffer, sector_t);
     void write(const sector_data_t &buffer, sector_t);
     [[nodiscard]] sector_t get_file_sectors() const { return file_sectors; }
 };

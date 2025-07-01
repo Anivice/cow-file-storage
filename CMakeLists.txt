@@ -81,16 +81,16 @@ if ("X${CMAKE_BUILD_TYPE}" STREQUAL "XDebug")
             -Wl,-z,relro -Wl,-z,now
     )
 
-#    list(APPEND compiler_options
-#            -fsanitize=address
-#            -fsanitize=undefined
-#    )
-#
-#    list(APPEND linker_options
-#            -fsanitize=address
-#            -fsanitize=undefined
-#            -lasan -lubsan
-#    )
+    list(APPEND compiler_options
+            -fsanitize=address
+            -fsanitize=undefined
+    )
+
+    list(APPEND linker_options
+            -fsanitize=address
+            -fsanitize=undefined
+            -lasan -lubsan
+    )
 
 #    list(APPEND compiler_options
 #            -fsanitize=thread
@@ -164,8 +164,8 @@ add_library(core STATIC
         src/core/crc64sum.cpp           src/include/core/crc64sum.h
         src/core/basic_io.cpp           src/include/core/basic_io.h
         src/core/cfs.cpp                src/include/core/cfs.h
-        src/core/bitmap.cpp
-        src/include/core/bitmap.h
+        src/core/bitmap.cpp             src/include/core/bitmap.h
+        src/core/block_io.cpp           src/include/core/block_io.h
 )
 
 if ("X${CMAKE_BUILD_TYPE}" STREQUAL "XDebug")

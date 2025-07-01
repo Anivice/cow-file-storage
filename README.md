@@ -17,6 +17,14 @@ How to build goes here
 Different TODOs goes here
 
  - [x] Basic Filesystem Structures
+ - [ ] Block Map to Memory
+ - [ ] Bitmap
+ - [ ] Ring Buffer
+ - [ ] Cache
+ - [ ] Block Seeking
+ - [ ] Inode
+ - [ ] Filesystem Basic Operations
+ - [ ] FUSE Implementation
 
 ## Used Public Repositories (Embedded in Source Files)
  * [CImg](https://github.com/GreycLab/CImg) Dependency for Terminal Image Viewer

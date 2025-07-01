@@ -22,6 +22,7 @@
 #define CFS_H
 
 #include <cstdint>
+#include <chrono>
 
 int mkfs_main(int argc, char **argv);
 int mount_main(int argc, char **argv);
@@ -39,7 +40,6 @@ struct cfs_head_t
         uint64_t blocks;                // block numbers
         uint64_t data_bitmap_start;
         uint64_t data_bitmap_end;
-        uint64_t data_bitmap_checksum;
         uint64_t data_bitmap_backup_start;
         uint64_t data_bitmap_backup_end;
         uint64_t data_block_attribute_table_start; // attribute is 16 byte for each data block
@@ -54,6 +54,7 @@ struct cfs_head_t
     struct {
         uint64_t mount_timestamp;       // when was the last time it's mounted
         uint64_t last_check_timestamp;  // last time check ran
+        uint64_t data_bitmap_checksum;
         struct {
             uint64_t clean:1;
         } flags;
@@ -110,5 +111,11 @@ static_assert(sizeof(cfs_head_t) == 512, "Faulty head size");
 inline uint64_t ceil_div(const uint64_t len, const uint64_t align) {
     return (len / align) + (len % align == 0 ? 0 : 1);
 }
+
+inline uint64_t get_timestamp() {
+    return std::chrono::high_resolution_clock::now().time_since_epoch().count();
+}
+
+#define SECTOR_SIZE (512ULL)
 
 #endif //CFS_H

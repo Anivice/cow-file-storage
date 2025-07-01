@@ -22,7 +22,7 @@
 #define CRC64SUM_H
 
 #include <cstdint>
-#include <string>
+#include <vector>
 
 #ifdef __unix__
 # undef LITTLE_ENDIAN
@@ -46,5 +46,22 @@ private:
     void init_crc64();
     static uint64_t reverse_bytes(uint64_t x);
 };
+
+[[nodiscard]] inline
+uint64_t hashcrc64(const std::vector<uint8_t> & data) {
+    CRC64 hash;
+    hash.update(data.data(), data.size());
+    return hash.get_checksum();
+}
+
+template < typename Type >
+concept PODType = std::is_standard_layout_v<Type> && std::is_trivial_v<Type>;
+
+template < PODType Type >
+[[nodiscard]] uint64_t hashcrc64(const Type & data) {
+    CRC64 hash;
+    hash.update((uint8_t*)&data, sizeof(data));
+    return hash.get_checksum();
+}
 
 #endif //CRC64SUM_H
