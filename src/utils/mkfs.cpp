@@ -21,8 +21,8 @@
 #include <atomic>
 #include <algorithm>
 
-#include "../include/core/cfs.h"
-#include "../include/helper/cpp_assert.h"
+#include "core/cfs.h"
+#include "helper/cpp_assert.h"
 #include "helper/log.h"
 #include "helper/arg_parser.h"
 #include "helper/color.h"
@@ -71,75 +71,114 @@ namespace mkfs {
 
 long long solveC(long long Count, long long Scale)
 {
-    long long lo = 0, hi = Count;             // f(C) ≥ C, so C ≤ Count
-    auto ceil_div = [](long long x, long long d){
-        return (x + d - 1) / d;               // idiom  ⟂cite turn0search0,turn0search8⟂
-    };
+    if (Scale <= 0) return -1;                      // guard bad input
 
-    while (lo < hi){
-        long long mid  = (lo + hi) >> 1;
-        long long A    = ceil_div(mid, 4096 * Scale);
-        long long B    = ceil_div(mid,  256 * Scale);
-        long long cur  = 2*A + B + mid;       // equation (★)
-        if (cur >= Count) hi = mid; else lo = mid + 1;
+    long long lo = 0;
+    long long hi = Count;                           // f(C) ≥ C, so Count is still an upper bound
+
+    while (lo < hi) {
+        long long mid = lo + ((hi - lo) >> 1);      // overflow‑safe midpoint
+        long long A   = ceil_div(mid, 4096 * Scale);
+        long long B   = ceil_div(mid,  256 * Scale);
+        long long cur = 2 * A + B + mid;
+        if (cur >= Count)
+            hi = mid;
+        else
+            lo = mid + 1;
     }
-    // verification step
-    long long A = (lo + 4096*Scale - 1) / (4096*Scale);
-    long long B = (lo + 256*Scale  - 1) / (256*Scale);
-    return (2*A + B + lo == Count) ? lo : -1; // −1 ⇒ no solution
+
+    long long A = ceil_div(lo, 4096 * Scale);
+    long long B = ceil_div(lo,  256 * Scale);
+    return (2 * A + B + lo == Count) ? lo : -1;     // verify exact equality
 }
 
+bool is_2_power_of(unsigned long long x)
+{
+    for (unsigned long long i = 1; i <= sizeof(x) * 8; i++)
+    {
+        const auto current_bit = x & 0x01;
+        if (current_bit) {
+            x >>= 1;
+            return !x;
+        }
+
+        x >>= 1;
+    }
+
+    return false;
+}
 
 void make_head(const sector_t sectors, const uint64_t block_size)
 {
     cfs_head_t head{};
     head.magick = head.magick_ = cfs_magick_number;
-    assert_throw(block_size > 512 && block_size % 512 == 0 && (block_size / 512) % 2 == 0 , "Block size not aligned");
-    head.static_info.block_over_sector = block_size / 512;
-    head.static_info.block_size = block_size;
-    head.static_info.sectors = sectors;
-    head.static_info.blocks = sectors / head.static_info.block_over_sector;
-    auto body_size = head.static_info.blocks - 2; // head and tail
-    const auto journaling_section_size = std::max(body_size / 10, 32ul);
-    assert_throw(body_size > journaling_section_size, "Not enough space");
-    const auto left_over = body_size - journaling_section_size;
-    long long k = -1;
-    int offset = 0;
-    while (k ==  -1 && offset != left_over) {
-        k = solveC(left_over - offset++, head.static_info.block_over_sector);
-    }
-    assert_throw(offset != left_over, "No solution for disk space division");
-    const auto data_blocks = k;
-    const auto data_block_bitmap = (data_blocks / 8 + (data_blocks % 8 == 0 ? 0 : 1)) / (512 * head.static_info.block_over_sector)
-        + (data_blocks / 8 + ((data_blocks % 8 == 0 ? 0 : 1)) % (512 * head.static_info.block_over_sector) == 0 ? 0 : 1);
-    const auto data_block_attribute_region = 2 * k / (512 * head.static_info.block_over_sector) + (2 * k % (512 * head.static_info.block_over_sector) == 0 ? 0 : 1);
-    const auto pile_region_size = data_block_bitmap * 2 + data_block_attribute_region + data_blocks;
 
-    uint64_t block_offset = 1;
+    // ────── basic sanity checks ──────
+    assert_throw(block_size > 512 && block_size % 512 == 0 && is_2_power_of(block_size / 512),
+            "Block size not aligned");
+
+    head.static_info.block_over_sector = block_size / 512;
+    head.static_info.block_size        = block_size;
+    head.static_info.sectors           = sectors;
+    head.static_info.blocks            = sectors / head.static_info.block_over_sector;
+
+    const uint64_t body_size              = head.static_info.blocks - 2;     // head & tail
+    const uint64_t journaling_section_size= std::max<uint64_t>(body_size / 10, 32);
+    assert_throw(body_size > journaling_section_size, "Not enough space");
+
+    const uint64_t left_over  = body_size - journaling_section_size;
+    const uint64_t scale      = head.static_info.block_over_sector;
+
+    uint64_t k = UINT64_MAX;
+    uint64_t offset = 0;
+    while (k == UINT64_MAX && offset < left_over) {
+        const long long candidate = solveC(left_over - offset, scale);
+        if (candidate != -1)
+            k = static_cast<uint64_t>(candidate);
+        else
+            ++offset;
+    }
+    assert_throw(offset < left_over, "No solution for disk space division");
+
+    const uint64_t data_blocks = k;
+
+    // ────── compute bitmap & attribute sizes with correct precedence ──────
+    const uint64_t bytes_per_block = scale * 512ULL;
+    const uint64_t bits_per_block  = bytes_per_block * 8ULL;
+
+    const uint64_t data_block_bitmap = ceil_div(data_blocks, bits_per_block);
+    const uint64_t data_block_attribute_region = ceil_div(data_blocks * 2ULL, bytes_per_block);
+
+    // ────── carve the regions ──────
+    uint64_t block_offset = 1;                 // block 0 is the head itself
+
     head.static_info.data_bitmap_start = block_offset;
-    head.static_info.data_bitmap_end = data_block_bitmap + block_offset;
+    head.static_info.data_bitmap_end   = block_offset + data_block_bitmap;
     block_offset += data_block_bitmap;
+
     head.static_info.data_bitmap_backup_start = block_offset;
-    head.static_info.data_bitmap_backup_end = data_block_bitmap + block_offset;
+    head.static_info.data_bitmap_backup_end   = block_offset + data_block_bitmap;
     block_offset += data_block_bitmap;
 
     head.static_info.data_block_attribute_table_start = block_offset;
-    head.static_info.data_block_attribute_table_end = data_block_attribute_region + block_offset;
+    head.static_info.data_block_attribute_table_end   = block_offset + data_block_attribute_region;
     block_offset += data_block_attribute_region;
 
     head.static_info.data_table_start = block_offset;
-    head.static_info.data_table_end = data_blocks + block_offset;
+    head.static_info.data_table_end   = block_offset + data_blocks;
     block_offset += data_blocks;
 
     head.static_info.journal_start = block_offset;
-    head.static_info.journal_end = journaling_section_size + block_offset;
+    head.static_info.journal_end   = block_offset + journaling_section_size;
     block_offset += journaling_section_size;
 
+    // ────── checksum & timestamps ──────
     CRC64 checksum;
-    checksum.update(reinterpret_cast<uint8_t *>(&head.static_info), sizeof(head.static_info));
+    checksum.update(reinterpret_cast<uint8_t*>(&head.static_info), sizeof(head.static_info));
     head.info_table_checksum = head.info_table_checksum_ = checksum.get_checksum();
-    head.runtime_info.mount_timestamp = head.runtime_info.last_check_timestamp
-        = std::chrono::high_resolution_clock::now().time_since_epoch().count();
+
+    const auto now = std::chrono::steady_clock::now().time_since_epoch().count();
+    head.runtime_info.mount_timestamp = head.runtime_info.last_check_timestamp = now;
 
     auto region_gen = [](const uint64_t start, const uint64_t end) {
         return "[" + std::to_string(start) + ", " + std::to_string(end) + ") (" + std::to_string(end - start) + " blocks)";
@@ -177,7 +216,7 @@ int mkfs_main(int argc, char **argv)
 {
     try
     {
-        make_head(7919*7, 2048);
+        make_head(-1, 1024*32);
         arg_parser args(argc, argv, mkfs::Arguments);
         auto contains = [&args](const std::string & name, std::string & val)->bool
         {

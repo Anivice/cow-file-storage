@@ -48,7 +48,6 @@ struct cfs_head_t
         uint64_t data_table_end;
         uint64_t journal_start;
         uint64_t journal_end;           // (journal_end - journal_start) == 32, journal is always 32 blocks
-        uint64_t effective_blocks;
     } static_info; // static info
     uint64_t info_table_checksum;
     uint64_t magick_;
@@ -103,8 +102,13 @@ struct cfs_head_t
         uint64_t _39;
         uint64_t _40;
         uint64_t _41;
+        uint64_t _42;
     } _reserved_;
 };
 static_assert(sizeof(cfs_head_t) == 512, "Faulty head size");
+
+inline uint64_t ceil_div(const uint64_t len, const uint64_t align) {
+    return (len / align) + (len % align == 0 ? 0 : 1);
+}
 
 #endif //CFS_H
