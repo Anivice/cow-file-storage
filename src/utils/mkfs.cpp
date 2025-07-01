@@ -210,6 +210,8 @@ void make_head(const sector_t sectors, const uint64_t block_size)
     verbose_log("       FILE SYSTEM HEAD BACKUP │ BLOCK: ", region_gen(block_offset, block_offset + 1));
     verbose_log("  ─────────────────────────────┴───────────────────────────────────────────────────────────────────────");
     verbose_log("=======================================================================================================");
+
+    // clear bitmap regions
 }
 
 int mkfs_main(int argc, char **argv)

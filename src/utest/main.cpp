@@ -33,7 +33,7 @@
 #include "helper/color.h"
 #include "helper/cpp_assert.h"
 
-extern void show();
+extern void show(bool);
 
 int main(int argc, char *argv[])
 {
@@ -187,7 +187,7 @@ int main(int argc, char *argv[])
 
         if (is_terminal)
         {
-            show();
+            show(true);
             std::cout << std::flush << std::endl;
         }
 
@@ -280,6 +280,7 @@ int main(int argc, char *argv[])
         list_all_tests();
     }
 
+    show(false);
     return EXIT_FAILURE;
 }
 

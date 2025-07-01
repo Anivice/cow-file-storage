@@ -164,6 +164,8 @@ add_library(core STATIC
         src/core/crc64sum.cpp           src/include/core/crc64sum.h
         src/core/basic_io.cpp           src/include/core/basic_io.h
         src/core/cfs.cpp                src/include/core/cfs.h
+        src/core/bitmap.cpp
+        src/include/core/bitmap.h
 )
 
 if ("X${CMAKE_BUILD_TYPE}" STREQUAL "XDebug")
