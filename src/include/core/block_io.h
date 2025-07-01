@@ -30,6 +30,7 @@ public:
         std::vector<uint8_t> data_;
         const uint64_t block_sector_start;
         const uint64_t block_sector_end;
+        bool read_only{false};
         basic_io_t & io;
         explicit block_data_t(const uint64_t block_size, const uint64_t block_sector_start_,
             const uint64_t block_sector_end_, basic_io_t & io_)
@@ -49,7 +50,7 @@ private:
     basic_io_t & io;
     cfs_head_t cfs_head;
     std::atomic_bool filesystem_dirty_on_mount_;
-    std::map < uint64_t /* block id */, block_data_ptr_t > block_cache;
+    std::map < uint64_t /* block id */, std::unique_ptr < block_data_ptr_t > > block_cache;
     std::atomic < uint64_t > max_cached_block_number;
     std::mutex mutex; // sync lock
 

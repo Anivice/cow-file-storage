@@ -45,6 +45,7 @@ void basic_io_t::close()
     if (fd != -1) {
         std::lock_guard<std::mutex> lock(mutex);
         ::close(fd);
+        fd = -1;
     }
 }
 

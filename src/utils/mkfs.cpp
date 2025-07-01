@@ -114,7 +114,7 @@ cfs_head_t make_head(const sector_t sectors, const uint64_t block_size)
     head.magick = head.magick_ = cfs_magick_number;
 
     // ────── basic sanity checks ──────
-    assert_throw(block_size > SECTOR_SIZE && block_size % SECTOR_SIZE == 0 && is_2_power_of(block_size / SECTOR_SIZE),
+    assert_throw(block_size >= SECTOR_SIZE && block_size % SECTOR_SIZE == 0 && is_2_power_of(block_size / SECTOR_SIZE),
             "Block size not aligned");
 
     head.static_info.block_over_sector = block_size / SECTOR_SIZE;

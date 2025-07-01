@@ -26,6 +26,7 @@ void block_io_t::sync_header()
     sector_data_t header_sector;
     std::memcpy(header_sector.data(), &cfs_head, sizeof(cfs_head_t));
     io.write(header_sector, 0);
+    io.write(header_sector, cfs_head.static_info.sectors - 1);
 }
 
 block_io_t::block_io_t(basic_io_t & io_) : io(io_)
@@ -38,6 +39,10 @@ block_io_t::block_io_t(basic_io_t & io_) : io(io_)
 
 block_io_t::~block_io_t()
 {
+    if (cfs_head.runtime_info.flags.clean) {
+        return;
+    }
+
     cfs_head.runtime_info.flags.clean = true;
     sync_header();
     sync();
@@ -51,9 +56,13 @@ void block_io_t::sync()
 
 block_io_t::block_data_t & block_io_t::at(const uint64_t index)
 {
-    assert_short(index < cfs_head.static_info.blocks && index != 0 && index != cfs_head.static_info.blocks - 1);
+    assert_short(index < cfs_head.static_info.blocks);
     if (block_cache.contains(index)) {
-        return *block_cache.at(index);
+        auto & ret = *block_cache.at(index);
+        if (index == 0 || index == cfs_head.static_info.blocks - 1) {
+            ret->read_only = true;
+        }
+        return *ret;
     }
 
     if (block_cache.size() == max_cached_block_number) {
@@ -62,20 +71,25 @@ block_io_t::block_data_t & block_io_t::at(const uint64_t index)
 
     sector_data_t data_sector;
     block_cache.emplace(index,
-        block_data_ptr_t(
+        std::make_unique<block_data_ptr_t>(
             cfs_head.static_info.block_size,
             index * cfs_head.static_info.block_over_sector,
             (index + 1) * cfs_head.static_info.block_over_sector,
             io));
 
-    auto & block_data = *block_cache.at(index);
+    const auto & block_data = *block_cache.at(index);
+    block_data->data_.resize(cfs_head.static_info.block_size);
     for (uint64_t i = 0; i < cfs_head.static_info.block_over_sector; i++)
     {
         io.read(data_sector, index * cfs_head.static_info.block_over_sector + i);
-        std::memcpy(block_data.data_.data() + i * SECTOR_SIZE, data_sector.data(), SECTOR_SIZE);
+        std::memcpy(block_data->data_.data() + i * SECTOR_SIZE, data_sector.data(), SECTOR_SIZE);
     }
 
-    return block_data;
+    if (index == 0 || index == cfs_head.static_info.blocks - 1) {
+        block_data->read_only = true;
+    }
+
+    return *block_data;
 }
 
 void block_io_t::block_data_t::get(uint8_t *buf, const size_t sz, const uint64_t in_blk_off)
@@ -88,6 +102,7 @@ void block_io_t::block_data_t::get(uint8_t *buf, const size_t sz, const uint64_t
 void block_io_t::block_data_t::update(const uint8_t * new_data, const size_t new_size, const uint64_t in_block_offset)
 {
     std::lock_guard<std::mutex> lock(mutex);
+    assert_short(!read_only);
     assert_short(in_block_offset + new_size <= data_.size());
     std::memcpy(data_.data() + in_block_offset, new_data, new_size);
 }
@@ -95,10 +110,11 @@ void block_io_t::block_data_t::update(const uint8_t * new_data, const size_t new
 void block_io_t::block_data_t::sync()
 {
     std::lock_guard<std::mutex> lock(mutex);
+    if (read_only) return;
     for (uint64_t i = block_sector_start; i < block_sector_end; i++)
     {
         sector_data_t data_sector;
-        std::memcpy(data_sector.data(), data_.data() + SECTOR_SIZE * i, SECTOR_SIZE);
+        std::memcpy(data_sector.data(), data_.data() + SECTOR_SIZE * (i - block_sector_start), SECTOR_SIZE);
         io.write(data_sector, i);
     }
 }
