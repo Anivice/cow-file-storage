@@ -99,9 +99,8 @@ int fsck_main(int argc, char **argv)
 
         if (contains("verbose", arg_val))
         {
-            // output if and only if verbose mode is not enabled before, prevent duplicated output
-            verbose_log("Verbose mode enabled");
             debug::verbose = true;
+            verbose_log("Verbose mode enabled");
         }
 
         ////////////////////////////////////////////////////////////////////////////////////////////////////////////////
