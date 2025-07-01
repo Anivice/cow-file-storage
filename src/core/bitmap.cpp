@@ -19,3 +19,53 @@
  */
 
 #include "core/bitmap.h"
+#include "helper/cpp_assert.h"
+#include "helper/log.h"
+
+bitmap::bitmap(block_io_t & block_mapping_, const uint64_t map_start_, const uint64_t map_end_, const uint64_t boundary_, const uint64_t block_size_)
+    : block_mapping(block_mapping_), map_start(map_start_), map_end(map_end_), boundary(boundary_), blk_size(block_size_)
+{
+    assert_short(map_start_ < map_end_);
+}
+
+bool bitmap::get(const uint64_t index) const
+{
+    assert_short(index < boundary);
+    const uint64_t byte_offset = index / 8;
+    const uint64_t bit_offset = index % 8;
+    const uint64_t block_offset = byte_offset / blk_size;
+    const uint64_t byte_in_block = byte_offset % blk_size;
+    assert_short(block_offset < (map_end - map_start));
+
+    debug_log("Block: ", block_offset, ", Byte: ", byte_in_block, ", Bit: ", bit_offset);
+    auto & desired_block = block_mapping.at(block_offset + map_start);
+    uint8_t data;
+    desired_block.get(&data, 1, byte_in_block);
+    data >>= bit_offset;
+    const auto result = data & 0x01;
+    return result;
+}
+
+void bitmap::set(const uint64_t index, bool val)
+{
+    assert_short(index < boundary);
+    const uint64_t byte_offset = index / 8;
+    const uint64_t bit_offset = index % 8;
+    const uint64_t block_offset = byte_offset / blk_size;
+    const uint64_t byte_in_block = byte_offset % blk_size;
+    assert_short(block_offset < (map_end - map_start));
+
+    debug_log("Block: ", block_offset, ", Byte: ", byte_in_block, ", Bit: ", bit_offset);
+    auto & desired_block = block_mapping.at(block_offset);
+    uint8_t data;
+    desired_block.get(&data, 1, byte_in_block);
+    uint8_t comp = val & 0x01;
+    comp <<= bit_offset;
+    data |= comp;
+    desired_block.update(&data, 1, byte_in_block);
+}
+
+uint64_t bitmap::hash()
+{
+    throw std::logic_error("Not implemented");
+}

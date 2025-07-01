@@ -158,7 +158,6 @@ add_library(core STATIC
         src/helper/color.cpp            src/include/helper/color.h
         src/helper/get_env.cpp          src/include/helper/get_env.h
         src/helper/arg_parser.cpp       src/include/helper/arg_parser.h
-        src/core/cache.cpp              src/include/core/cache.h
         src/helper/lz4.c                src/include/helper/lz4.h
         src/core/inode.cpp              src/include/core/inode.h
         src/core/crc64sum.cpp           src/include/core/crc64sum.h

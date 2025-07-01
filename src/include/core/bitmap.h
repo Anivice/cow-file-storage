@@ -21,8 +21,22 @@
 #ifndef BITMAP_H
 #define BITMAP_H
 
-class bitmap {
+#include "core/block_io.h"
 
+class bitmap {
+    block_io_t & block_mapping;
+    const uint64_t map_start;
+    const uint64_t map_end;
+    const uint64_t boundary;
+    const uint64_t blk_size;
+
+public:
+    explicit bitmap(block_io_t & block_mapping_,
+        uint64_t map_start_, uint64_t map_end_, uint64_t boundary_ /* size, max index == size - 1 */,
+        uint64_t block_size_);
+    bool get(uint64_t) const;
+    void set(uint64_t, bool);
+    uint64_t hash();
 };
 
 #endif //BITMAP_H
