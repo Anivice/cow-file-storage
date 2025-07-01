@@ -1,6 +1,3 @@
-#ifndef CRC64SUM_H
-#define CRC64SUM_H
-
 /* ch64sum.h
  *
  * Copyright 2025 Anivice Ives
@@ -20,6 +17,9 @@
  *
  * SPDX-License-Identifier: GPL-3.0-or-later
  */
+
+#ifndef CRC64SUM_H
+#define CRC64SUM_H
 
 #include <cstdint>
 #include <string>

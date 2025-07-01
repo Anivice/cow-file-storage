@@ -1,3 +1,22 @@
+# CMakeLists.txt
+#
+# Copyright 2025 Anivice Ives
+#
+# This program is free software: you can redistribute it and/or modify
+# it under the terms of the GNU General Public License as published by
+# the Free Software Foundation, either version 3 of the License, or
+# (at your option) any later version.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU General Public License for more details.
+#
+# You should have received a copy of the GNU General Public License
+# along with this program.  If not, see <https://www.gnu.org/licenses/>.
+#
+# SPDX-License-Identifier: GPL-3.0-or-later
+
 cmake_minimum_required(VERSION 3.30)
 
 if ("X${CMAKE_BUILD_TYPE}" STREQUAL "XDebug")
@@ -144,6 +163,7 @@ add_library(core STATIC
         src/core/inode.cpp              src/include/core/inode.h
         src/core/crc64sum.cpp           src/include/core/crc64sum.h
         src/core/basic_io.cpp           src/include/core/basic_io.h
+        src/core/cfs.cpp                src/include/core/cfs.h
 )
 
 if ("X${CMAKE_BUILD_TYPE}" STREQUAL "XDebug")
@@ -158,5 +178,12 @@ if ("X${CMAKE_BUILD_TYPE}" STREQUAL "XDebug")
     )
 endif ()
 
-add_executable(cfs src/utils/cfs.cpp)
+add_executable(cfs src/utils/cfs.cpp src/utils/mkfs.cpp src/utils/fsck.cpp src/utils/mount.cpp)
 target_link_libraries(cfs PRIVATE core)
+add_custom_target(utils ALL
+        COMMAND ${CMAKE_COMMAND} -E create_symlink cfs mount.cfs
+        COMMAND ${CMAKE_COMMAND} -E create_symlink cfs fsck.cfs
+        COMMAND ${CMAKE_COMMAND} -E create_symlink cfs mkfs.cfs
+        COMMENT "Creating CFS utilities..."
+        DEPENDS cfs
+)

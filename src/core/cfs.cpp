@@ -1,4 +1,4 @@
-/* basic_io.h
+/* cfs.cpp
  *
  * Copyright 2025 Anivice Ives
  *
@@ -17,8 +17,3 @@
  *
  * SPDX-License-Identifier: GPL-3.0-or-later
  */
-
-#ifndef BASIC_IO_H
-#define BASIC_IO_H
-
-#endif //BASIC_IO_H

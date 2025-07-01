@@ -1,4 +1,4 @@
-/* basic_io.h
+/* cfs.h
  *
  * Copyright 2025 Anivice Ives
  *
@@ -18,7 +18,11 @@
  * SPDX-License-Identifier: GPL-3.0-or-later
  */
 
-#ifndef BASIC_IO_H
-#define BASIC_IO_H
+#ifndef CFS_H
+#define CFS_H
 
-#endif //BASIC_IO_H
+int mkfs_main(int argc, char **argv);
+int mount_main(int argc, char **argv);
+int fsck_main(int argc, char **argv);
+
+#endif //CFS_H

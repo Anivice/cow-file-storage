@@ -1,5 +1,6 @@
 /*
  * Copyright (c) 2017-2023, Stefan Haustein, Aaron Liu
+ *               2025, Anivice Ives, edited and exported as a library for test suit
  *
  *     This file is free software: you may copy, redistribute and/or modify it
  *     under the terms of the GNU General Public License as published by the
@@ -53,19 +54,14 @@
 #include <cstring>
 #endif
 
-#ifdef _WIN32
-#include <windows.h>
-// Error explanation
-#include <system_error>
-#endif
-
 // Program exit code constants compatible with sysexits.h.
 #define EXITCODE_OK 0
 #define EXITCODE_COMMAND_LINE_USAGE_ERROR 64
 #define EXITCODE_DATA_FORMAT_ERROR 65
 #define EXITCODE_NO_INPUT_ERROR 66
 
-void printTermColor(const int &flags, int r, int g, int b) {
+void printTermColor(const int &flags, int r, int g, int b)
+{
     r = clamp_byte(r);
     g = clamp_byte(g);
     b = clamp_byte(b);
