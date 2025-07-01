@@ -38,7 +38,6 @@ public:
 
     [[nodiscard]] uint64_t get_checksum(endian_t endian = BIG_ENDIAN
         /* CRC64 tools like 7ZIP display in BIG_ENDIAN */) const;
-    [[nodiscard]] std::string get_checksum_str() const;
 
 private:
     uint64_t crc64_value{};

@@ -21,4 +21,27 @@
 #ifndef BASIC_IO_H
 #define BASIC_IO_H
 
+#include <cstdint>
+#include <array>
+
+/// sector index type
+using sector_t = unsigned long long int;
+using sector_data_t = std::array<uint8_t, 512>;
+
+/// basic IO using low level system calls only
+class basic_io_t
+{
+    int fd = -1; /// file descriptor
+    sector_t file_sectors = 0; /// sector count, sector is always 512 bytes
+
+public:
+    basic_io_t() = default;
+    ~basic_io_t() { close(); }
+    void open(const char *file_name);
+    void close();
+    void read(sector_data_t & buffer, sector_t) const;
+    void write(const sector_data_t &buffer, sector_t);
+    [[nodiscard]] sector_t get_file_sectors() const { return file_sectors; }
+};
+
 #endif //BASIC_IO_H

@@ -187,3 +187,6 @@ add_custom_target(utils ALL
         COMMENT "Creating CFS utilities..."
         DEPENDS cfs
 )
+
+add_executable(pro src/main.cpp)
+target_link_libraries(pro PRIVATE core)
