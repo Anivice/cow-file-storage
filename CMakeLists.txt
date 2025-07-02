@@ -166,8 +166,9 @@ add_library(core SHARED
         src/core/cfs.cpp                src/include/core/cfs.h
         src/core/bitmap.cpp             src/include/core/bitmap.h
         src/core/block_io.cpp           src/include/core/block_io.h
-        src/core/ring_buffer.cpp
-        src/include/core/ring_buffer.h
+        src/core/ring_buffer.cpp        src/include/core/ring_buffer.h
+        src/core/blk_manager.cpp        src/include/core/blk_manager.h
+        src/core/journal.cpp            src/include/core/journal.h
 )
 
 if ("X${CMAKE_BUILD_TYPE}" STREQUAL "XDebug")

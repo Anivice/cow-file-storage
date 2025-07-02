@@ -2,6 +2,7 @@
 #include "helper/log.h"
 #include "helper/cpp_assert.h"
 #include "core/ring_buffer.h"
+#include "core/journal.h"
 
 int main(int argc, char *argv[])
 {
@@ -30,36 +31,39 @@ int main(int argc, char *argv[])
         // for (int i = 0; i < 12288; i++) {
         //     assert_short(!bmap.get(i));
         // }
-        ring_buffer buffer(block_io, cfs_head.static_info.block_size, 1, 5);
-        std::vector<uint8_t> data, data2;
-        data.resize(338);
-        data2.resize(338);
+        // ring_buffer buffer(block_io, cfs_head.static_info.block_size, 1, 5);
+        // std::vector<uint8_t> data, data2;
+        // data.resize(338);
+        // data2.resize(338);
+        //
+        // for (int k = 0; k < 510; k++)
+        // {
+        //     for (int i = 0; i < 128; i++)
+        //     {
+        //         for (auto & c : data) {
+        //             c = rand() % 255;
+        //         }
+        //
+        //         buffer.write(data.data(), data.size());
+        //     }
+        //
+        //     while (buffer.read(data2.data(), data2.size()));
+        // }
+        //
+        // for (int i = 0; i < 32*1024*7; i++)
+        // {
+        //     uint8_t byte1 = rand() % 255, byte2 = rand() % 255, byte3 = rand() % 255, byte_r;
+        //     buffer.write(&byte1, 1);
+        //     buffer.write(&byte2, 1);
+        //     buffer.write(&byte3, 1);
+        //     buffer.read(&byte_r, 1);
+        //     buffer.read(&byte_r, 1);
+        //     buffer.read(&byte_r, 1);
+        //     assert_short(byte3 == byte_r);
+        // }
 
-        for (int k = 0; k < 510; k++)
-        {
-            for (int i = 0; i < 128; i++)
-            {
-                for (auto & c : data) {
-                    c = rand() % 255;
-                }
-
-                buffer.write(data.data(), data.size());
-            }
-
-            while (buffer.read(data2.data(), data2.size()));
-        }
-
-        for (int i = 0; i < 32*1024*7; i++)
-        {
-            uint8_t byte1 = rand() % 255, byte2 = rand() % 255, byte3 = rand() % 255, byte_r;
-            buffer.write(&byte1, 1);
-            buffer.write(&byte2, 1);
-            buffer.write(&byte3, 1);
-            buffer.read(&byte_r, 1);
-            buffer.read(&byte_r, 1);
-            buffer.read(&byte_r, 1);
-            assert_short(byte3 == byte_r);
-        }
+        journaling journal(block_io);
+        journal.push_action(actions::ACTION_DONE, 1);
     }
 
     basic_io.close();

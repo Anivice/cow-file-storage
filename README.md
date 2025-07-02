@@ -19,7 +19,7 @@ Different TODOs goes here
  - [x] Basic Filesystem Structures
  - [x] Block Map to Memory
  - [x] Bitmap
- - [ ] Ring Buffer
+ - [x] Ring Buffer
  - [ ] Block Allocation and Deletion
  - [ ] Block COW
  - [ ] Journaling
