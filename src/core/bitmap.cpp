@@ -29,7 +29,7 @@ bitmap::bitmap(block_io_t & block_mapping_, const uint64_t map_start_, const uin
     assert_short(map_start_ < map_end_);
 }
 
-bool bitmap::get(const uint64_t index) const
+bool bitmap::get(const uint64_t index)
 {
     assert_short(index < boundary);
     const uint64_t byte_offset = index / 8;
@@ -38,6 +38,7 @@ bool bitmap::get(const uint64_t index) const
     const uint64_t byte_in_block = byte_offset % blk_size;
     assert_short(block_offset < (map_end - map_start));
 
+    std::lock_guard lock(mutex);
     // debug_log("Block: ", block_offset, ", Byte: ", byte_in_block, ", Bit: ", bit_offset);
     auto & desired_block = block_mapping.at(block_offset + map_start);
     uint8_t data;
@@ -56,6 +57,7 @@ void bitmap::set(const uint64_t index, const bool val)
     const uint64_t byte_in_block = byte_offset % blk_size;
     assert_short(block_offset < (map_end - map_start));
 
+    std::lock_guard lock(mutex);
     // debug_log("Block: ", block_offset, ", Byte: ", byte_in_block, ", Bit: ", bit_offset);
     auto & desired_block = block_mapping.at(block_offset + map_start);
     uint8_t data;
@@ -70,11 +72,12 @@ void bitmap::set(const uint64_t index, const bool val)
     desired_block.update(&data, 1, byte_in_block);
 }
 
-uint64_t bitmap::hash() const
+uint64_t bitmap::hash()
 {
     CRC64 hash;
     std::vector<uint8_t> data(blk_size);
 
+    std::lock_guard lock(mutex);
     for (uint64_t i = map_start; i < map_end; i++) {
         auto & desired_block = block_mapping.at(i);
         desired_block.get(data.data(), blk_size, 0);

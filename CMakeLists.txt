@@ -89,7 +89,8 @@ if ("X${CMAKE_BUILD_TYPE}" STREQUAL "XDebug")
     list(APPEND linker_options
             -fsanitize=address
             -fsanitize=undefined
-            -lasan -lubsan
+            -lasan
+            -lubsan
     )
 
 #    list(APPEND compiler_options
@@ -165,6 +166,8 @@ add_library(core SHARED
         src/core/cfs.cpp                src/include/core/cfs.h
         src/core/bitmap.cpp             src/include/core/bitmap.h
         src/core/block_io.cpp           src/include/core/block_io.h
+        src/core/ring_buffer.cpp
+        src/include/core/ring_buffer.h
 )
 
 if ("X${CMAKE_BUILD_TYPE}" STREQUAL "XDebug")

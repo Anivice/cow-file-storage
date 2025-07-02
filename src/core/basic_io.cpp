@@ -28,6 +28,7 @@ void basic_io_t::open(const char *file_name)
 {
     std::lock_guard<std::mutex> lock(mutex);
     fd = ::open(file_name, O_DIRECT | O_RDWR | O_DSYNC | O_LARGEFILE | O_NOATIME | O_SYNC);
+    // FIXME: Lock file
     if (fd == -1) {
         throw runtime_error("Error opening file");
     }

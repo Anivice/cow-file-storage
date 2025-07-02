@@ -105,16 +105,20 @@ void block_io_t::block_data_t::update(const uint8_t * new_data, const size_t new
     assert_short(!read_only);
     assert_short(in_block_offset + new_size <= data_.size());
     std::memcpy(data_.data() + in_block_offset, new_data, new_size);
+    out_of_sync = true;
 }
 
 void block_io_t::block_data_t::sync()
 {
     std::lock_guard<std::mutex> lock(mutex);
     if (read_only) return;
+    if (!out_of_sync) return;
     for (uint64_t i = block_sector_start; i < block_sector_end; i++)
     {
         sector_data_t data_sector;
         std::memcpy(data_sector.data(), data_.data() + SECTOR_SIZE * (i - block_sector_start), SECTOR_SIZE);
         io.write(data_sector, i);
     }
+
+    out_of_sync = false;
 }

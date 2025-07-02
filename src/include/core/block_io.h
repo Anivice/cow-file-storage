@@ -31,6 +31,7 @@ public:
         const uint64_t block_sector_start;
         const uint64_t block_sector_end;
         bool read_only{false};
+        bool out_of_sync = false; // if data changed in memory but not reflected onto file
         basic_io_t & io;
         explicit block_data_t(const uint64_t block_size, const uint64_t block_sector_start_,
             const uint64_t block_sector_end_, basic_io_t & io_)

@@ -29,14 +29,15 @@ class bitmap {
     const uint64_t map_end;
     const uint64_t boundary;
     const uint64_t blk_size;
+    std::mutex mutex;
 
 public:
     explicit bitmap(block_io_t & block_mapping_,
         uint64_t map_start_, uint64_t map_end_, uint64_t boundary_ /* size, max index == size - 1 */,
         uint64_t block_size_);
-    bool get(uint64_t) const;
+    bool get(uint64_t);
     void set(uint64_t, bool);
-    uint64_t hash() const;
+    uint64_t hash();
 };
 
 #endif //BITMAP_H
