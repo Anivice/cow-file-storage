@@ -28,16 +28,17 @@ void basic_io_t::open(const char *file_name)
 {
     std::lock_guard<std::mutex> lock(mutex);
     fd = ::open(file_name, O_DIRECT | O_RDWR | O_DSYNC | O_LARGEFILE | O_NOATIME | O_SYNC);
-    // FIXME: Lock file
-    if (fd == -1) {
-        throw runtime_error("Error opening file");
-    }
-
+    flock lk = {
+        .l_type   = F_WRLCK,   // write lock
+        .l_whence = SEEK_SET,  // lock the whole file
+        .l_start  = 0,
+        .l_len    = 0,
+        .l_pid    = getpid(),
+    };
+    assert_throw(fcntl(fd, F_SETLKW, &lk) != -1, "fcntl lock");
+    assert_throw(fd != -1, "Error opening file");
     const uint64_t size = lseek(fd, 0, SEEK_END);
-    if (size == static_cast<uint64_t>(-1)) {
-        throw runtime_error("Error getting size of file");
-    }
-
+    assert_throw(size != static_cast<uint64_t>(-1), "Error getting size of file");
     file_sectors = size / 512;
 }
 
@@ -45,6 +46,14 @@ void basic_io_t::close()
 {
     if (fd != -1) {
         std::lock_guard<std::mutex> lock(mutex);
+        flock lk = {
+            .l_type   = F_UNLCK,
+            .l_whence = SEEK_SET,
+            .l_start  = 0,
+            .l_len    = 0,
+            .l_pid    =  getpid(),
+        };
+        fcntl(fd, F_SETLK, &lk);     // unlock
         ::close(fd);
         fd = -1;
     }
