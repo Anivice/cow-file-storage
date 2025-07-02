@@ -36,7 +36,7 @@ public:
         uint64_t block_size_);
     bool get(uint64_t) const;
     void set(uint64_t, bool);
-    uint64_t hash();
+    uint64_t hash() const;
 };
 
 #endif //BITMAP_H

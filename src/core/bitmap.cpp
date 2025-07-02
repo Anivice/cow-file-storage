@@ -19,6 +19,7 @@
  */
 
 #include "core/bitmap.h"
+#include "core/crc64sum.h"
 #include "helper/cpp_assert.h"
 #include "helper/log.h"
 
@@ -37,7 +38,7 @@ bool bitmap::get(const uint64_t index) const
     const uint64_t byte_in_block = byte_offset % blk_size;
     assert_short(block_offset < (map_end - map_start));
 
-    debug_log("Block: ", block_offset, ", Byte: ", byte_in_block, ", Bit: ", bit_offset);
+    // debug_log("Block: ", block_offset, ", Byte: ", byte_in_block, ", Bit: ", bit_offset);
     auto & desired_block = block_mapping.at(block_offset + map_start);
     uint8_t data;
     desired_block.get(&data, 1, byte_in_block);
@@ -46,7 +47,7 @@ bool bitmap::get(const uint64_t index) const
     return result;
 }
 
-void bitmap::set(const uint64_t index, bool val)
+void bitmap::set(const uint64_t index, const bool val)
 {
     assert_short(index < boundary);
     const uint64_t byte_offset = index / 8;
@@ -55,17 +56,30 @@ void bitmap::set(const uint64_t index, bool val)
     const uint64_t byte_in_block = byte_offset % blk_size;
     assert_short(block_offset < (map_end - map_start));
 
-    debug_log("Block: ", block_offset, ", Byte: ", byte_in_block, ", Bit: ", bit_offset);
-    auto & desired_block = block_mapping.at(block_offset);
+    // debug_log("Block: ", block_offset, ", Byte: ", byte_in_block, ", Bit: ", bit_offset);
+    auto & desired_block = block_mapping.at(block_offset + map_start);
     uint8_t data;
     desired_block.get(&data, 1, byte_in_block);
-    uint8_t comp = val & 0x01;
+    uint8_t comp = 0x01;
     comp <<= bit_offset;
-    data |= comp;
+    if (val) {
+        data |= comp;
+    } else {
+        data &= ~comp;
+    }
     desired_block.update(&data, 1, byte_in_block);
 }
 
-uint64_t bitmap::hash()
+uint64_t bitmap::hash() const
 {
-    throw std::logic_error("Not implemented");
+    CRC64 hash;
+    std::vector<uint8_t> data(blk_size);
+
+    for (uint64_t i = map_start; i < map_end; i++) {
+        auto & desired_block = block_mapping.at(i);
+        desired_block.get(data.data(), blk_size, 0);
+        hash.update(data.data(), blk_size);
+    }
+
+    return hash.get_checksum();
 }

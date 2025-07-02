@@ -17,11 +17,12 @@ How to build goes here
 Different TODOs goes here
 
  - [x] Basic Filesystem Structures
- - [ ] Block Map to Memory
- - [ ] Bitmap
+ - [x] Block Map to Memory
+ - [x] Bitmap
  - [ ] Ring Buffer
- - [ ] Cache
- - [ ] Block Seeking
+ - [ ] Block Allocation and Deletion
+ - [ ] Block COW
+ - [ ] Journaling
  - [ ] Inode
  - [ ] Filesystem Basic Operations
  - [ ] FUSE Implementation

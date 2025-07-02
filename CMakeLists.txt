@@ -148,7 +148,7 @@ set(CMAKE_CXX_STANDARD 23)
 include_directories(src/include)
 add_compile_definitions(CORE_VERSION="0.0.1")
 add_compile_definitions(BACKEND_VERSION="0.0.1")
-add_library(core STATIC
+add_library(core SHARED
         src/include/helper/cpp_assert.h
         src/include/helper/WorkerThread.h
         src/include/helper/err_type.h
