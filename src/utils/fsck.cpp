@@ -27,6 +27,8 @@
 #include "helper/arg_parser.h"
 #include "helper/color.h"
 #include "core/basic_io.h"
+#include "core/bitmap.h"
+#include "core/block_attr.h"
 
 namespace fsck {
     const arg_parser::parameter_vector Arguments = {
@@ -153,11 +155,44 @@ int fsck_main(int argc, char **argv)
         {
             basic_io_t io;
             io.open(arg_val.c_str());
-            sector_data_t data;
-            io.read(data, 0);
-            cfs_head_t head{};
-            std::memcpy(&head, data.data(), sizeof(head));
-            print_head(head);
+            {
+                block_io_t block_io(io);
+                sector_data_t data;
+                io.read(data, 0);
+                cfs_head_t head{};
+                std::memcpy(&head, data.data(), sizeof(head));
+                print_head(head);
+                bitmap bmap(block_io, head.static_info.data_bitmap_start, head.static_info.data_bitmap_end,
+                    head.static_info.data_table_end - head.static_info.data_table_start,
+                    head.static_info.block_size);
+                block_attr_t block_attr(block_io, head.static_info.block_size,
+                    head.static_info.data_block_attribute_table_start, head.static_info.data_block_attribute_table_end,
+                    head.static_info.data_table_end - head.static_info.data_table_start);
+                std::cout << "      ";
+                constexpr uint64_t line_max_entries = 80;
+                for (uint64_t i = 0; i < head.static_info.data_table_end - head.static_info.data_table_start; i++)
+                {
+                    if (i % line_max_entries == 0 && i >= line_max_entries) {
+                        std::cout << std::endl << "      ";
+                    }
+
+                    if (bmap.get(i)) {
+                        auto attr = block_attr.get(i);
+                        const auto blk_attr = *reinterpret_cast<cfs_blk_attr_t*>(&attr);
+                        switch (blk_attr.type) {
+                            case 1: std::cout << color::color(0,5,0) << (blk_attr.frozen ? color::bg_color(3,0,0) : "") << 'I'; break;
+                            case 2: std::cout << color::color(0,3,5) << (blk_attr.frozen ? color::bg_color(3,0,0) : "") << 'P'; break;
+                            case 3: std::cout << color::color(0,5,5) << (blk_attr.frozen ? color::bg_color(3,0,0) : "") << 'S'; break;
+                            default: std::cout << color::color(5,5,5) << (blk_attr.frozen ? color::bg_color(3,0,0) : "") << '?'; break;
+                        }
+                        std::cout << color::no_color();
+                    } else {
+                        std::cout << '.';
+                    }
+                }
+
+                std::cout << std::endl;
+            }
             return EXIT_SUCCESS;
         }
 

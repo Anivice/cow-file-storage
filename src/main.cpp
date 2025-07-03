@@ -67,11 +67,17 @@ int main(int argc, char *argv[])
         // journal.push_action(actions::ACTION_DONE);
         // auto journal_entries = journal.export_journaling();
         blk_manager manager(block_io);
-        for (int i = 0; i < 100; i++) {
-            const auto blk = manager.allocate_block();
-            manager.free_block(blk);
+        try {
+            for (int i = 0; i < rand() % 512; i++) {
+                const auto blk = manager.allocate_block();
+                manager.set_attr(blk, cfs_blk_attr_t{.frozen = (uint16_t)(rand() % 2), .type = (uint16_t)(rand() % 4) });
+            }
+
+            manager.free_block(0);
+
+            debug_log(manager.free_blocks());
+        } catch (...) {
         }
-        debug_log(manager.free_blocks(), " ", manager.allocate_block());
     }
 
     basic_io.close();

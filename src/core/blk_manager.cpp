@@ -25,6 +25,12 @@ blk_manager::blk_manager(block_io_t & block_io)
         header.static_info.data_bitmap_backup_start, header.static_info.data_bitmap_backup_end,
         blk_count,
         header.static_info.block_size);
+    block_attr = std::make_unique<block_attr_t>(
+        block_io,
+        header.static_info.block_size,
+        header.static_info.data_block_attribute_table_start,
+        header.static_info.data_block_attribute_table_end,
+        blk_count);
 
     auto bitmap_hash = [this, &header](const uint64_t start, const uint64_t end)->uint64_t {
         CRC64 hash;

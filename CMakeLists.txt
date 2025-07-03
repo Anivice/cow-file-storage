@@ -169,6 +169,8 @@ add_library(core SHARED
         src/core/ring_buffer.cpp        src/include/core/ring_buffer.h
         src/core/blk_manager.cpp        src/include/core/blk_manager.h
         src/core/journal.cpp            src/include/core/journal.h
+        src/core/block_attr.cpp
+        src/include/core/block_attr.h
 )
 
 if ("X${CMAKE_BUILD_TYPE}" STREQUAL "XDebug")

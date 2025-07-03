@@ -70,7 +70,7 @@ void bitmap::set(const uint64_t index, const bool val)
         data &= ~comp;
     }
     desired_block.update(&data, 1, byte_in_block);
-    desired_block.sync();
+    // desired_block.sync();
 }
 
 uint64_t bitmap::hash()
