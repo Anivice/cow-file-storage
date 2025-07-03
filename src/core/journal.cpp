@@ -1,35 +1,23 @@
 #include "core/journal.h"
+#include "helper/cpp_assert.h"
 
-std::vector<std::vector<uint16_t>> journaling::export_journaling()
+template <typename Type>
+requires (std::is_integral_v<Type>)
+Type read_from(std::vector<uint8_t> & vec)
+{
+    Type result = 0;
+    const auto read_size = std::min(sizeof(Type),  vec.size());
+    std::memcpy(&result, vec.data(), read_size);
+    return result;
+}
+
+std::vector<uint8_t> journaling::export_journaling()
 {
     // shadow read buffer
-    std::vector<uint16_t> journal_data;
+    std::vector<uint8_t> journal_data;
     const auto buffer_len = rb->available_buffer();
+    if (buffer_len == 0) return {};
     journal_data.resize(buffer_len);
-    rb->read(reinterpret_cast<uint8_t *>(journal_data.data()), buffer_len, true);
-    std::vector<std::vector<uint16_t>> journal;
-    std::vector<uint16_t> entry;
-    bool entry_start = false;
-    for (const auto & c : journal_data)
-    {
-        if (c == actions::action_start) {
-            entry_start = true;
-            continue;
-        }
-
-        if (c == actions::action_end) {
-            if (!entry.empty()) {
-                journal.push_back(entry);
-                entry.clear();
-            }
-            entry_start = false;
-            continue;
-        }
-
-        if (entry_start) {
-            entry.push_back(c);
-        }
-    }
-
-    return journal;
+    rb->read(journal_data.data(), buffer_len, true);
+    return journal_data;
 }

@@ -1,5 +1,6 @@
 #include "core/blk_manager.h"
 #include "helper/log.h"
+#include "helper/cpp_assert.h"
 
 cfs_head_t blk_manager::get_header()
 {
@@ -11,12 +12,8 @@ cfs_head_t blk_manager::get_header()
 
 void blk_manager::bitset(const uint64_t index, const bool value)
 {
-    uint16_t val = bitget(index);
-    val <<= 8;
-    val |= value;
-
-    journal->push_action(actions::ACTION_MODIFY_BITMAP,
-        ((uint16_t*)&index)[0], ((uint16_t*)&index)[1], ((uint16_t*)&index)[2], ((uint16_t*)&index)[3], val);
+    bool old = bitget(index);
+    journal->push_action(actions::ACTION_MODIFY_BITMAP, index, old, value);
 
     block_bitmap->set(index, value);
     block_bitmap_mirror->set(index, value);
@@ -69,6 +66,7 @@ blk_manager::blk_manager(block_io_t & block_io)
 uint64_t blk_manager::allocate_block()
 {
     std::lock_guard<std::mutex> guard(mutex);
+    journal->push_action(actions::ACTION_ALLOCATE_BLOCK);
     auto header = get_header();
     if (header.runtime_info.allocated_blocks == blk_count) {
         throw no_space_available();
@@ -94,19 +92,19 @@ uint64_t blk_manager::allocate_block()
     update_bitmap_hash(header);
     uint64_t bitmap_hash_after = header.runtime_info.data_bitmap_checksum;
 
-    journal->push_action(actions::ACTION_UPDATE_BITMAP_HASH,
-        ((uint16_t*)&bitmap_hash_before)[0], ((uint16_t*)&bitmap_hash_before)[1], ((uint16_t*)&bitmap_hash_before)[2], ((uint16_t*)&bitmap_hash_before)[3],
-        ((uint16_t*)&bitmap_hash_after)[0], ((uint16_t*)&bitmap_hash_after)[1], ((uint16_t*)&bitmap_hash_after)[2], ((uint16_t*)&bitmap_hash_after)[3]);
+    journal->push_action(actions::ACTION_UPDATE_BITMAP_HASH, bitmap_hash_before, bitmap_hash_after);
     blk_mapping.update_runtime_info(header);
-    journal->push_action(actions::ACTION_DONE);
-
+    journal->push_action(actions::ACTION_DONE); // ACTION_UPDATE_BITMAP_HASH
+    journal->push_action(actions::ACTION_DONE); // ACTION_ALLOCATE_BLOCK
     return last_alloc_blk;
 }
 
 void blk_manager::free_block(const uint64_t block)
 {
     std::lock_guard<std::mutex> guard(mutex);
-    if (bitget(block)) {
+    if (bitget(block))
+    {
+        journal->push_action(actions::ACTION_DEALLOCATE_BLOCK, block);
         bitset(block, false);
 
         auto header = get_header();
@@ -115,11 +113,10 @@ void blk_manager::free_block(const uint64_t block)
         update_bitmap_hash(header);
         uint64_t bitmap_hash_after = header.runtime_info.data_bitmap_checksum;
 
-        journal->push_action(actions::ACTION_UPDATE_BITMAP_HASH,
-            ((uint16_t*)&bitmap_hash_before)[0], ((uint16_t*)&bitmap_hash_before)[1], ((uint16_t*)&bitmap_hash_before)[2], ((uint16_t*)&bitmap_hash_before)[3],
-            ((uint16_t*)&bitmap_hash_after)[0], ((uint16_t*)&bitmap_hash_after)[1], ((uint16_t*)&bitmap_hash_after)[2], ((uint16_t*)&bitmap_hash_after)[3]);
+        journal->push_action(actions::ACTION_UPDATE_BITMAP_HASH, bitmap_hash_before, bitmap_hash_after);
         blk_mapping.update_runtime_info(header);
-        journal->push_action(actions::ACTION_DONE);
+        journal->push_action(actions::ACTION_DONE); // ACTION_UPDATE_BITMAP_HASH
+        journal->push_action(actions::ACTION_DONE); // ACTION_DEALLOCATE_BLOCK
     }
 }
 
@@ -134,9 +131,7 @@ void blk_manager::set_attr(const uint64_t index, const cfs_blk_attr_t val)
 {
     std::lock_guard lock(mutex);
     const auto before = block_attr->get(index);
-    journal->push_action(actions::ACTION_MODIFY_BLOCK_ATTRIBUTES,
-        ((uint16_t*)&index)[0], ((uint16_t*)&index)[1], ((uint16_t*)&index)[2], ((uint16_t*)&index)[3],
-        before, *(uint16_t*)&val);
+    journal->push_action(actions::ACTION_MODIFY_BLOCK_ATTRIBUTES, index, before, val);
     block_attr->set(index, *(uint16_t*)&val);
     journal->push_action(actions::ACTION_DONE);
 }
@@ -158,9 +153,7 @@ void blk_manager::hash_block(const uint64_t block)
         for (const auto c : blk_data) {
             battr.quick_hash ^= c;
         }
-        journal->push_action(actions::ACTION_MODIFY_BLOCK_ATTRIBUTES,
-            ((uint16_t*)&block)[0], ((uint16_t*)&block)[1], ((uint16_t*)&block)[2], ((uint16_t*)&block)[3],
-            before, attr);
+        journal->push_action(actions::ACTION_MODIFY_BLOCK_ATTRIBUTES, block, before, attr);
         block_attr->set(block, attr);
         journal->push_action(actions::ACTION_DONE);
     }

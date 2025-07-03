@@ -20,7 +20,8 @@
 
 #include <atomic>
 #include <algorithm>
-
+#include "journal_hd.h"
+#include "core/journal.h"
 #include "core/cfs.h"
 #include "helper/cpp_assert.h"
 #include "helper/log.h"
@@ -29,6 +30,7 @@
 #include "core/basic_io.h"
 #include "core/bitmap.h"
 #include "core/block_attr.h"
+
 
 namespace fsck {
     const arg_parser::parameter_vector Arguments = {
@@ -162,6 +164,8 @@ int fsck_main(int argc, char **argv)
                 cfs_head_t head{};
                 std::memcpy(&head, data.data(), sizeof(head));
                 print_head(head);
+
+                // allocation bitmap
                 bitmap bmap(block_io, head.static_info.data_bitmap_start, head.static_info.data_bitmap_end,
                     head.static_info.data_table_end - head.static_info.data_table_start,
                     head.static_info.block_size);
@@ -192,6 +196,14 @@ int fsck_main(int argc, char **argv)
                 }
 
                 std::cout << std::endl;
+
+                // // journaling
+                // journaling journal(block_io);
+                // const auto journal_entries = journal.export_journaling();
+                // const auto decoded = decoder_jentries(journal_entries);
+                // for (const auto & entry : decoded) {
+                //     std::cout << entry << std::endl;
+                // }
             }
             return EXIT_SUCCESS;
         }
