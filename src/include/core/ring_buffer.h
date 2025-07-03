@@ -25,7 +25,8 @@ public:
     explicit ring_buffer(block_io_t & io, const uint64_t blk_size_, const uint64_t map_start_, const uint64_t map_end_)
         : io(io), blk_size(blk_size_), map_start(map_start_), map_end(map_end_) {}
     void write(uint8_t *, uint64_t);
-    uint64_t read(uint8_t *, uint64_t);
+    uint64_t read(uint8_t *, uint64_t, bool shadow_read = false);
+    uint64_t available_buffer();
 };
 
 #endif //RING_BUFFER_H

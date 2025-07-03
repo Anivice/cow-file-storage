@@ -20,41 +20,58 @@ void block_io_t::filesystem_verification()
     cfs_head.runtime_info.flags.clean = false;
 }
 
-void block_io_t::sync_header()
+void block_io_t::unblocked_sync_header()
 {
-    std::lock_guard<std::mutex> lock(mutex);
-    sector_data_t header_sector;
-    std::memcpy(header_sector.data(), &cfs_head, sizeof(cfs_head_t));
-    io.write(header_sector, 0);
-    io.write(header_sector, cfs_head.static_info.sectors - 1);
+    auto & start =  unblocked_at(0), & end = unblocked_at(cfs_head.static_info.sectors - 1);
+    start.read_only = false;
+    start.update((uint8_t*)&cfs_head, sizeof(cfs_head_t), 0);
+    start.sync();
+    start.read_only = true;
+
+    end.read_only = false;
+    end.update((uint8_t*)&cfs_head, sizeof(cfs_head_t), cfs_head.static_info.block_size - sizeof(cfs_head_t));
+    end.sync();
+    end.read_only = true;
+    // sector_data_t header_sector;
+    // std::memcpy(header_sector.data(), &cfs_head, sizeof(cfs_head_t));
+    // io.write(header_sector, 0);
+    // io.write(header_sector, cfs_head.static_info.sectors - 1);
 }
 
-block_io_t::block_io_t(basic_io_t & io_) : io(io_)
+block_io_t::block_io_t(basic_io_t & io) : io(io)
 {
     filesystem_verification();
     cfs_head.runtime_info.mount_timestamp = get_timestamp();
-    sync_header();
+    unblocked_sync_header();
     max_cached_block_number = 8; // TODO: proper cache size
 }
 
 block_io_t::~block_io_t()
 {
+    std::lock_guard<std::mutex> lock(mutex);
     if (cfs_head.runtime_info.flags.clean) {
         return;
     }
 
     cfs_head.runtime_info.flags.clean = true;
-    sync_header();
-    sync();
+    unblocked_sync_header();
+    block_cache.clear();
+}
+
+void block_io_t::update_runtime_info(const cfs_head_t head) {
+    std::lock_guard<std::mutex> lock(mutex);
+    cfs_head.runtime_info = head.runtime_info;
+    unblocked_sync_header();
 }
 
 void block_io_t::sync()
 {
     std::lock_guard<std::mutex> lock(mutex);
     block_cache.clear();
+    unblocked_sync_header();
 }
 
-block_io_t::block_data_t & block_io_t::at(const uint64_t index)
+block_io_t::block_data_t & block_io_t::unblocked_at(const uint64_t index)
 {
     assert_short(index < cfs_head.static_info.blocks);
     if (block_cache.contains(index)) {
@@ -90,6 +107,12 @@ block_io_t::block_data_t & block_io_t::at(const uint64_t index)
     }
 
     return *block_data;
+}
+
+block_io_t::block_data_t & block_io_t::at(const uint64_t index)
+{
+    std::lock_guard<std::mutex> lock(mutex);
+    return unblocked_at(index);
 }
 
 void block_io_t::block_data_t::get(uint8_t *buf, const size_t sz, const uint64_t in_blk_off)

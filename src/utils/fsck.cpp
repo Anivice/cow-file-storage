@@ -20,16 +20,21 @@
 
 #include <atomic>
 #include <algorithm>
+
+#include "core/cfs.h"
+#include "helper/cpp_assert.h"
 #include "helper/log.h"
 #include "helper/arg_parser.h"
 #include "helper/color.h"
-#include "helper/get_env.h"
+#include "core/basic_io.h"
 
 namespace fsck {
     const arg_parser::parameter_vector Arguments = {
         { .name = "help",       .short_name = 'h', .arg_required = false,   .description = "Prints this help message" },
         { .name = "version",    .short_name = 'v', .arg_required = false,   .description = "Prints version" },
         { .name = "verbose",    .short_name = 'V', .arg_required = false,   .description = "Enable verbose output" },
+        { .name = "path",       .short_name = 'p', .arg_required = true,    .description = "Path to disk/file" },
+        { .name = "block",      .short_name = 'b', .arg_required = true,    .description = "Block size" },
     };
 
     void print_help(const std::string & program_name)
@@ -61,6 +66,46 @@ namespace fsck {
                       << color::color(4,5,1) << description << color::no_color() << std::endl;
         }
     }
+}
+
+cfs_head_t print_head(cfs_head_t head)
+{
+    auto region_gen = [](const uint64_t start, const uint64_t end) {
+        return color::color(1,5,4) + "[" + std::to_string(start) + ", " + std::to_string(end) + ")" + color::color(3,3,3)
+        + " (" + std::to_string(end - start) + " block<s>)" + color::no_color();
+    };
+
+    const auto data_block_attribute = region_gen(head.static_info.data_block_attribute_table_start, head.static_info.data_block_attribute_table_end);
+    const auto data_bitmap_region = region_gen(head.static_info.data_bitmap_start, head.static_info.data_bitmap_end);
+    const auto data_bitmap_backup_region = region_gen(head.static_info.data_bitmap_backup_start, head.static_info.data_bitmap_backup_end);
+    const auto data_region = region_gen(head.static_info.data_table_start, head.static_info.data_table_end);
+    const auto journal_region = region_gen(head.static_info.journal_start, head.static_info.journal_end);
+
+    console_log("============================================ Disk Overview ============================================");
+    console_log(" Disk size:    ", head.static_info.sectors, " sectors");
+    console_log("               ", head.static_info.blocks, " blocks (addressable region: ", region_gen(0, head.static_info.blocks), ")");
+    console_log(" Block size:   ", head.static_info.block_size, " bytes (", head.static_info.block_over_sector, " sectors)");
+    console_log("  ─────────────────────────────┬───────────────────────────────────────────────────────────────────────");
+    console_log(color::color(5,5,5), "              FILE SYSTEM HEAD │ BLOCK: ", region_gen(0, 1));
+    console_log("  ─────────────────────────────┼───────────────────────────────────────────────────────────────────────");
+    console_log(color::color(5,5,5), "            DATA REGION BITMAP │ BLOCK: ", data_bitmap_region);
+    console_log("  ─────────────────────────────┼───────────────────────────────────────────────────────────────────────");
+    console_log(color::color(5,5,5), "        DATA BITMAP BACKUP MAP │ BLOCK: ", data_bitmap_backup_region);
+    console_log("  ─────────────────────────────┼───────────────────────────────────────────────────────────────────────");
+    console_log(color::color(5,5,5), "          DATA BLOCK ATTRIBUTE │ BLOCK: ", data_block_attribute);
+    console_log("  ─────────────────────────────┼───────────────────────────────────────────────────────────────────────");
+    console_log(color::color(5,5,5), "                    DATA BLOCK │ BLOCK: ", data_region);
+    console_log("  ─────────────────────────────┼───────────────────────────────────────────────────────────────────────");
+    console_log(color::color(5,5,5), "                JOURNAL REGION │ BLOCK: ", journal_region);
+    console_log("  ─────────────────────────────┼───────────────────────────────────────────────────────────────────────");
+    console_log(color::color(5,5,5), "       FILE SYSTEM HEAD BACKUP │ BLOCK: ", region_gen(head.static_info.blocks - 1, head.static_info.blocks));
+    console_log("  ─────────────────────────────┴───────────────────────────────────────────────────────────────────────");
+    console_log(color::color(5,5,5), std::hex, "Filesystem Bitmap Hash: ", head.runtime_info.data_bitmap_checksum);
+    console_log(color::color(5,5,5), std::dec, "Filesystem Allocated Blocks: ", head.runtime_info.allocated_blocks);
+    console_log(color::color(5,5,5), std::dec, "Filesystem Last Allocated Block: ", head.runtime_info.last_allocated_block);
+    console_log("=======================================================================================================");
+
+    return head;
 }
 
 int fsck_main(int argc, char **argv)
@@ -104,12 +149,21 @@ int fsck_main(int argc, char **argv)
         }
 
         ////////////////////////////////////////////////////////////////////////////////////////////////////////////////
-    }
-    catch (const std::exception & e)
-    {
+        if (contains("path", arg_val))
+        {
+            basic_io_t io;
+            io.open(arg_val.c_str());
+            sector_data_t data;
+            io.read(data, 0);
+            cfs_head_t head{};
+            std::memcpy(&head, data.data(), sizeof(head));
+            print_head(head);
+            return EXIT_SUCCESS;
+        }
+
+        throw runtime_error("No path specified");
+    } catch (const std::exception &e) {
         error_log(e.what());
         return EXIT_FAILURE;
     }
-
-    return EXIT_SUCCESS;
 }

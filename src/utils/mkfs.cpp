@@ -297,6 +297,7 @@ int mkfs_main(int argc, char **argv)
             verbose_log("Clearing entries");
             clear_entries(io, head);
             head.runtime_info.last_check_timestamp = get_timestamp();
+            head.runtime_info.flags.clean = 1;
             sector_data_t data{};
             std::memcpy(data.data(), &head, sizeof(head));
             verbose_log("Writing filesystem head");

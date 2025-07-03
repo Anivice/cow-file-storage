@@ -23,6 +23,7 @@ private:
         block_data_t & operator*() const { return *ptr; }
     };
 
+
 public:
     class block_data_t
     {
@@ -40,7 +41,7 @@ public:
         ~block_data_t() { sync(); } // sync on destruction
 
     public:
-        size_t size() const { return data_.size(); }
+        [[nodiscard]] size_t size() const { return data_.size(); }
         void get(uint8_t * buf, size_t sz, uint64_t in_blk_off);
         void update(const uint8_t * new_data, size_t new_size, uint64_t in_block_offset);
         void sync();
@@ -49,23 +50,29 @@ public:
 
 private:
     basic_io_t & io;
-    cfs_head_t cfs_head;
+    cfs_head_t cfs_head{};
     std::atomic_bool filesystem_dirty_on_mount_;
     std::map < uint64_t /* block id */, std::unique_ptr < block_data_ptr_t > > block_cache;
     std::atomic < uint64_t > max_cached_block_number;
     std::mutex mutex; // sync lock
 
     void filesystem_verification();
+    void unblocked_sync_header();
 
 public:
     explicit block_io_t(basic_io_t & io);
     [[nodiscard]] bool filesystem_dirty_on_mount() const { return filesystem_dirty_on_mount_; }
-    void sync_header();
     void sync();
     ~block_io_t();
+    void update_bitmap_hash();
 
+private:
+    block_data_t & unblocked_at(uint64_t);
+
+public:
     block_data_t & at(uint64_t);
     block_data_t & operator[](const uint64_t index) { return at(index); }
+    void update_runtime_info(cfs_head_t);
 };
 
 #endif //BLOCK_IO_H

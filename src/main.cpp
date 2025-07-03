@@ -3,6 +3,7 @@
 #include "helper/cpp_assert.h"
 #include "core/ring_buffer.h"
 #include "core/journal.h"
+#include "include/core/blk_manager.h"
 
 int main(int argc, char *argv[])
 {
@@ -11,10 +12,10 @@ int main(int argc, char *argv[])
 
     {
         block_io_t block_io(basic_io);
-        cfs_head_t cfs_head{};
-        auto & head = block_io.at(0);
+        // cfs_head_t cfs_head{};
+        // auto & head = block_io.at(0);
         // auto & data = block_io.at(1);
-        head.get((uint8_t*)&cfs_head, sizeof(cfs_head), 0);
+        // head.get((uint8_t*)&cfs_head, sizeof(cfs_head), 0);
         // data.update((uint8_t*)"FUCK", 4, 2);
         // bitmap bmap(block_io, 1, 4, 12288, cfs_head.static_info.block_size);
         // for (int i = 0; i < 12288 * 7; i++)
@@ -62,8 +63,15 @@ int main(int argc, char *argv[])
         //     assert_short(byte3 == byte_r);
         // }
 
-        journaling journal(block_io);
-        journal.push_action(actions::ACTION_DONE, 1);
+        // journaling journal(block_io);
+        // journal.push_action(actions::ACTION_DONE);
+        // auto journal_entries = journal.export_journaling();
+        blk_manager manager(block_io);
+        for (int i = 0; i < 100; i++) {
+            const auto blk = manager.allocate_block();
+            manager.free_block(blk);
+        }
+        debug_log(manager.free_blocks(), " ", manager.allocate_block());
     }
 
     basic_io.close();

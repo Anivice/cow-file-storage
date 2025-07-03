@@ -4,6 +4,8 @@
 #include <memory>
 #include <map>
 #include <vector>
+
+#include "helper/cpp_assert.h"
 #include "core/ring_buffer.h"
 
 namespace actions {
@@ -12,18 +14,16 @@ namespace actions {
 
     enum Actions : uint16_t { ACTION_DONE = 0x08 };
     bool action_done(const std::vector<uint16_t> &);
+    typedef bool (*decoder_t)(const std::vector<uint16_t>&);
+    const std::map < actions::Actions, std::pair < decoder_t /* func */, uint64_t /* argc */ > > action_codec = {
+        { actions::ACTION_DONE, { actions::action_done, 0 } }
+    };
 }
 
 class journaling
 {
-public:
-    typedef bool (*decoder_t)(const std::vector<uint16_t>&);
-    const std::map < actions::Actions, std::pair < decoder_t /* func */, int /* argc */ > > action_codec = {
-        { actions::ACTION_DONE, { actions::action_done, 0 } }
-    };
-
-private:
     std::unique_ptr < ring_buffer > rb;
+    std::mutex mtx;
 
 public:
     explicit journaling(block_io_t & io)
@@ -41,13 +41,23 @@ public:
     template < typename... ArgType >
     void push_action(const actions::Actions action, const ArgType... args)
     {
+        std::lock_guard<std::mutex> lock(mtx);
         static_assert(((sizeof(ArgType) >= 2) && ...), "Action is 2 byte aligned");
+        rb->write((uint8_t *)&actions::action_start, sizeof(actions::action_start));
         rb->write((uint8_t *)(&action), sizeof(action));
-        std::vector<uint16_t> action_args { static_cast<uint16_t>(args)... };
+        const std::vector<uint16_t> action_args { static_cast<uint16_t>(args)... };
+        try {
+            assert_short(action_args.size() == actions::action_codec.at(action).second);
+        } catch (std::out_of_range &) {
+            throw runtime_error("No such action");
+        }
         for (const auto & arg : action_args) {
             rb->write((uint8_t *)(&arg), sizeof(arg));
         }
+        rb->write((uint8_t *)&actions::action_end, sizeof(actions::action_end));
     }
+
+    std::vector<std::vector<uint16_t>> export_journaling();
 };
 
 #endif //JOURNAL_H

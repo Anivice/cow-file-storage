@@ -131,7 +131,7 @@ void ring_buffer::write(std::uint8_t *src, std::uint64_t len)
     save_attributes(rd_off, wr_off, flags);
 }
 
-std::uint64_t ring_buffer::read(std::uint8_t *dst, std::uint64_t len)
+std::uint64_t ring_buffer::read(std::uint8_t *dst, std::uint64_t len, bool shadow_read)
 {
     std::lock_guard<std::mutex> lock(mutex);
 
@@ -167,6 +167,22 @@ std::uint64_t ring_buffer::read(std::uint8_t *dst, std::uint64_t len)
     }
 
     /* 6. Persist and return */
-    save_attributes(rd_off, wr_off, flags);
+    if (!shadow_read) {
+        save_attributes(rd_off, wr_off, flags);
+    }
     return len;
+}
+
+uint64_t ring_buffer::available_buffer()
+{
+    /* 1. Load state */
+    std::uint64_t rd_off, wr_off;
+    flags_t flags{};
+    get_attributes(rd_off, wr_off, flags);
+
+    /* 2. Available bytes */
+    const std::uint64_t avail =
+        flags.flipped ? (buffer_length - rd_off) + wr_off
+                       : (wr_off - rd_off);
+    return avail;
 }

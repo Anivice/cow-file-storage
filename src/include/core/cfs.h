@@ -58,6 +58,8 @@ struct cfs_head_t
         struct {
             uint64_t clean:1;
         } flags;
+        uint64_t last_allocated_block;
+        uint64_t allocated_blocks;
     } runtime_info;
     uint64_t info_table_checksum_;
 
@@ -102,8 +104,6 @@ struct cfs_head_t
         uint64_t _38;
         uint64_t _39;
         uint64_t _40;
-        uint64_t _41;
-        uint64_t _42;
     } _reserved_;
 };
 static_assert(sizeof(cfs_head_t) == 512, "Faulty head size");
