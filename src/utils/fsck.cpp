@@ -168,8 +168,8 @@ int fsck_main(int argc, char **argv)
                 block_attr_t block_attr(block_io, head.static_info.block_size,
                     head.static_info.data_block_attribute_table_start, head.static_info.data_block_attribute_table_end,
                     head.static_info.data_table_end - head.static_info.data_table_start);
-                std::cout << "      ";
-                constexpr uint64_t line_max_entries = 80;
+                std::cout << "Block Allocation Bitmap:\n      ";
+                constexpr uint64_t line_max_entries = 140;
                 for (uint64_t i = 0; i < head.static_info.data_table_end - head.static_info.data_table_start; i++)
                 {
                     if (i % line_max_entries == 0 && i >= line_max_entries) {

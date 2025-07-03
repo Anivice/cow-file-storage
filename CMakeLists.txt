@@ -151,7 +151,6 @@ add_compile_definitions(CORE_VERSION="0.0.1")
 add_compile_definitions(BACKEND_VERSION="0.0.1")
 add_library(core SHARED
         src/include/helper/cpp_assert.h
-        src/include/helper/WorkerThread.h
         src/include/helper/err_type.h
         src/helper/log.cpp              src/include/helper/log.h
         src/helper/backtrace.cpp        src/include/helper/backtrace.h
@@ -169,8 +168,7 @@ add_library(core SHARED
         src/core/ring_buffer.cpp        src/include/core/ring_buffer.h
         src/core/blk_manager.cpp        src/include/core/blk_manager.h
         src/core/journal.cpp            src/include/core/journal.h
-        src/core/block_attr.cpp
-        src/include/core/block_attr.h
+        src/core/block_attr.cpp         src/include/core/block_attr.h
 )
 
 if ("X${CMAKE_BUILD_TYPE}" STREQUAL "XDebug")
