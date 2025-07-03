@@ -8,7 +8,7 @@ struct cfs_blk_attr_t
     // cow status
     uint16_t frozen:1; // is snapshot frozen
     // block type
-    uint16_t type:2; // 1 -> index, 2 -> pointer, 3 -> storage
+    uint16_t type:2; // 1 -> index, 2 -> pointer, 3 -> storage, 0 -> copy-on-write redundance
     uint16_t quick_hash:8; // xor hash, to fast check integrity
     uint16_t _reserved:5; // unused
 };

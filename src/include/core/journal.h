@@ -11,12 +11,28 @@
 namespace actions {
     constexpr uint16_t action_start = 0xABCD;
     constexpr uint16_t action_end = 0xFEDC;
+    constexpr uint16_t action_bitmap_free = 0x0100;
+    constexpr uint16_t action_bitmap_alloc = 0x0001;
 
-    enum Actions : uint16_t { ACTION_DONE = 0x08 };
+    enum Actions : uint16_t {
+        ACTION_DONE = 0x08,
+        ACTION_MODIFY_BITMAP,
+        ACTION_MODIFY_BLOCK_ATTRIBUTES,
+        ACTION_MODIFY_BLOCK_CONTENT,
+        ACTION_UPDATE_BITMAP_HASH,
+        ACTION_ALLOCATE_BLOCK,
+        ACTION_DEALLOCATE_BLOCK,
+    };
     bool action_done(const std::vector<uint16_t> &);
     typedef bool (*decoder_t)(const std::vector<uint16_t>&);
-    const std::map < actions::Actions, std::pair < decoder_t /* func */, uint64_t /* argc */ > > action_codec = {
-        { actions::ACTION_DONE, { actions::action_done, 0 } }
+    const std::map < Actions, uint64_t /* argc */ > action_codec = {
+        { ACTION_DONE, 0 },
+        { ACTION_MODIFY_BITMAP, 4 /* where */ + 1 /* [before][after] */ },
+        { ACTION_MODIFY_BLOCK_ATTRIBUTES, 4 /* where */ + 4 /* before */ + 4 /* after */ },
+        { ACTION_MODIFY_BLOCK_CONTENT, 4 /* where */ + 4 /* copy-on-write pointer */ },
+        { ACTION_UPDATE_BITMAP_HASH, 4 /* before */ + 4 /* after */ },
+        { ACTION_ALLOCATE_BLOCK, 0 },
+        { ACTION_DEALLOCATE_BLOCK, 4 /* where */ }
     };
 }
 
@@ -47,7 +63,7 @@ public:
         rb->write((uint8_t *)(&action), sizeof(action));
         const std::vector<uint16_t> action_args { static_cast<uint16_t>(args)... };
         try {
-            assert_short(action_args.size() == actions::action_codec.at(action).second);
+            assert_short(action_args.size() == actions::action_codec.at(action));
         } catch (std::out_of_range &) {
             throw runtime_error("No such action");
         }

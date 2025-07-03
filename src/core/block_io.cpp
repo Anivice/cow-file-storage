@@ -58,7 +58,8 @@ block_io_t::~block_io_t()
     block_cache.clear();
 }
 
-void block_io_t::update_runtime_info(const cfs_head_t head) {
+void block_io_t::update_runtime_info(const cfs_head_t head)
+{
     std::lock_guard<std::mutex> lock(mutex);
     cfs_head.runtime_info = head.runtime_info;
     unblocked_sync_header();

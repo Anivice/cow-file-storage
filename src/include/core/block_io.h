@@ -7,13 +7,18 @@
 #include "core/basic_io.h"
 #include "core/cfs.h"
 
+/*!
+ * @brief block_io_t is an abstraction layer operating on block instead of 512 byte sectors, and offer a in-memory cache
+ */
 class block_io_t {
 public:
+    /// public data block pointer, this element points to a specific block, and write to disk(sync) on deleting.
     class block_data_t;
 
 private:
+    /// block_data_t construction helper, to conseal details within the class member
     class block_data_ptr_t {
-        block_data_t * ptr;
+        block_data_t * ptr; /// block pointer
     public:
         explicit block_data_ptr_t(const uint64_t blk_sz, const uint64_t block_sector_start_,
             const uint64_t block_sector_end_, basic_io_t & io_)
@@ -23,56 +28,70 @@ private:
         block_data_t & operator*() const { return *ptr; }
     };
 
-
 public:
     class block_data_t
     {
-        std::mutex mutex{};
-        std::vector<uint8_t> data_;
-        const uint64_t block_sector_start;
-        const uint64_t block_sector_end;
-        bool read_only{false};
-        bool out_of_sync = false; // if data changed in memory but not reflected onto file
-        basic_io_t & io;
+        std::mutex mutex{};                 /// R/W mutes
+        std::vector<uint8_t> data_;         /// in memory cache data
+        const uint64_t block_sector_start;  /// on-disk sector start [start, end)
+        const uint64_t block_sector_end;    /// on-disk sector end [start, end)
+        bool read_only{false};              /// disable alteration to this block
+        bool out_of_sync = false;           /// if data changed in memory but not reflected onto file
+        basic_io_t & io;                    /// basic IO
         explicit block_data_t(const uint64_t block_size, const uint64_t block_sector_start_,
             const uint64_t block_sector_end_, basic_io_t & io_)
             : block_sector_start(block_sector_start_), block_sector_end(block_sector_end_), io(io_)
         { data_.resize(block_size); }
-        ~block_data_t() { sync(); } // sync on destruction
+        ~block_data_t() { sync(); }         /// sync on destruction
 
     public:
-        [[nodiscard]] size_t size() const { return data_.size(); }
-        void get(uint8_t * buf, size_t sz, uint64_t in_blk_off);
-        void update(const uint8_t * new_data, size_t new_size, uint64_t in_block_offset);
-        void sync();
+        [[nodiscard]] size_t size() const { return data_.size(); }  /// data size, should always be block size
+        void get(uint8_t * buf, size_t sz, uint64_t in_blk_off);    /// read data
+        void update(const uint8_t * new_data, size_t new_size, uint64_t in_block_offset);   /// update cache
+        void sync();                        /// write to disk
+        bool is_out_of_sync() const { return out_of_sync; } /// check if update() is called
         friend class block_io_t;
     };
 
 private:
-    basic_io_t & io;
-    cfs_head_t cfs_head{};
-    std::atomic_bool filesystem_dirty_on_mount_;
-    std::map < uint64_t /* block id */, std::unique_ptr < block_data_ptr_t > > block_cache;
-    std::atomic < uint64_t > max_cached_block_number;
-    std::mutex mutex; // sync lock
+    basic_io_t & io;                        /// basic IO
+    cfs_head_t cfs_head{};                  /// in memory head
+    std::atomic_bool filesystem_dirty_on_mount_;    /// if filesystem is dirty on mount
+    std::map < uint64_t /* block id */, std::unique_ptr < block_data_ptr_t > > block_cache; /// cache
+    std::atomic < uint64_t > max_cached_block_number;   /// max cached block allowed in memory
+    std::mutex mutex;
 
-    void filesystem_verification();
-    void unblocked_sync_header();
+    void filesystem_verification();         /// filesystem basic health check
+    void unblocked_sync_header();           /// sync head to disk
 
 public:
     explicit block_io_t(basic_io_t & io);
-    [[nodiscard]] bool filesystem_dirty_on_mount() const { return filesystem_dirty_on_mount_; }
-    void sync();
+    [[nodiscard]] bool filesystem_dirty_on_mount() const { return filesystem_dirty_on_mount_; } /// is filesystem dirty?
+    void sync();                            /// sync
     ~block_io_t();
-    void update_bitmap_hash();
 
 private:
-    block_data_t & unblocked_at(uint64_t);
+    block_data_t & unblocked_at(uint64_t);  /// generate a block pointer (no mutex)
 
 public:
-    block_data_t & at(uint64_t);
+    /*!
+     * @brief generate a block pointer
+     * @param index Block index (while disk)
+     * @return block_data_t, block pointer
+     */
+    block_data_t & at(uint64_t index);
+    /*!
+     * @brief generate a block pointer
+     * @param index Block index (while disk)
+     * @return block_data_t, block pointer
+     */
     block_data_t & operator[](const uint64_t index) { return at(index); }
-    void update_runtime_info(cfs_head_t);
+
+    /*!
+     * update runtime info in header, static info will be ignored
+     * @param head New header
+     */
+    void update_runtime_info(cfs_head_t head);
 };
 
 #endif //BLOCK_IO_H

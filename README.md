@@ -20,9 +20,8 @@ Different TODOs goes here
  - [x] Block Map to Memory
  - [x] Bitmap
  - [x] Ring Buffer
- - [ ] Block Allocation and Deletion
- - [ ] Block COW
- - [ ] Journaling
+ - [x] Block Allocation and Deletion
+ - [x] Block Attributes
  - [ ] Inode
  - [ ] Filesystem Basic Operations
  - [ ] FUSE Implementation

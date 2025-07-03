@@ -16,7 +16,6 @@ void block_attr_t::linear_write(const void * data, const uint64_t size, const ui
     auto & first_blk = io.at(first_blk_position + attr_region_start);
     first_blk.update(static_cast<const uint8_t *>(data), first_blk_write_size, first_blk_offset);
     g_wr_off += first_blk_write_size;
-    first_blk.sync();
 
     // 2. write continuous blocks
     for (uint64_t i = 0; i < continuous_blks; i++) {
@@ -24,14 +23,12 @@ void block_attr_t::linear_write(const void * data, const uint64_t size, const ui
         auto & blk = io.at(blk_position);
         blk.update(static_cast<const uint8_t *>(data) + g_wr_off, block_size, 0);
         g_wr_off += block_size;
-        blk.sync();
     }
 
     if (last_blk_write_size) {
         auto & last_blk = io.at(attr_region_start + last_blk_position);
         last_blk.update(static_cast<const uint8_t *>(data) + g_wr_off, last_blk_write_size, 0);
         g_wr_off += last_blk_write_size;
-        last_blk.sync();
     }
 
     assert_short(g_wr_off == size);
