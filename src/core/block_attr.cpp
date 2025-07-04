@@ -13,21 +13,21 @@ void block_attr_t::linear_write(const void * data, const uint64_t size, const ui
 
     uint64_t g_wr_off = 0;
     // 1. write first block
-    auto & first_blk = io.at(first_blk_position + attr_region_start);
-    first_blk.update(static_cast<const uint8_t *>(data), first_blk_write_size, first_blk_offset);
+    auto first_blk = io.safe_at(first_blk_position + attr_region_start);
+    first_blk->update(static_cast<const uint8_t *>(data), first_blk_write_size, first_blk_offset);
     g_wr_off += first_blk_write_size;
 
     // 2. write continuous blocks
     for (uint64_t i = 0; i < continuous_blks; i++) {
         const uint64_t blk_position = attr_region_start + first_blk_position + 1 + i;
-        auto & blk = io.at(blk_position);
-        blk.update(static_cast<const uint8_t *>(data) + g_wr_off, block_size, 0);
+        auto blk = io.safe_at(blk_position);
+        blk->update(static_cast<const uint8_t *>(data) + g_wr_off, block_size, 0);
         g_wr_off += block_size;
     }
 
     if (last_blk_write_size) {
-        auto & last_blk = io.at(attr_region_start + last_blk_position);
-        last_blk.update(static_cast<const uint8_t *>(data) + g_wr_off, last_blk_write_size, 0);
+        auto last_blk = io.safe_at(attr_region_start + last_blk_position);
+        last_blk->update(static_cast<const uint8_t *>(data) + g_wr_off, last_blk_write_size, 0);
         g_wr_off += last_blk_write_size;
     }
 
@@ -46,21 +46,21 @@ void block_attr_t::linear_read(void * data, const uint64_t size, const uint64_t 
 
     uint64_t g_wr_off = 0;
     // 1. read first block
-    auto & first_blk = io.at(first_blk_position + attr_region_start);
-    first_blk.get(static_cast<uint8_t *>(data), first_blk_read_size, first_blk_offset);
+    auto first_blk = io.safe_at(first_blk_position + attr_region_start);
+    first_blk->get(static_cast<uint8_t *>(data), first_blk_read_size, first_blk_offset);
     g_wr_off += first_blk_read_size;
 
     // 2. read continuous blocks
     for (uint64_t i = 0; i < continuous_blks; i++) {
         const uint64_t blk_position = attr_region_start + first_blk_position + 1 + i;
-        auto & blk = io.at(blk_position);
-        blk.get(static_cast<uint8_t *>(data) + g_wr_off, block_size, 0);
+        auto blk = io.safe_at(blk_position);
+        blk->get(static_cast<uint8_t *>(data) + g_wr_off, block_size, 0);
         g_wr_off += block_size;
     }
 
     if (last_blk_read_size) {
-        auto & last_blk = io.at(attr_region_start + last_blk_position);
-        last_blk.get(static_cast<uint8_t *>(data) + g_wr_off, last_blk_read_size, 0);
+        auto last_blk = io.safe_at(attr_region_start + last_blk_position);
+        last_blk->get(static_cast<uint8_t *>(data) + g_wr_off, last_blk_read_size, 0);
         g_wr_off += last_blk_read_size;
     }
     assert_short(g_wr_off == size);

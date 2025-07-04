@@ -11,13 +11,25 @@ Type read_from(std::vector<uint8_t> & vec)
     return result;
 }
 
-std::vector<uint8_t> journaling::export_journaling()
+std::vector<entry_t> journaling::export_journaling()
 {
     // shadow read buffer
     std::vector<uint8_t> journal_data;
+    std::vector<entry_t> ret;
     const auto buffer_len = rb->available_buffer();
     if (buffer_len == 0) return {};
     journal_data.resize(buffer_len);
     rb->read(journal_data.data(), buffer_len, true);
-    return journal_data;
+    for (uint64_t i = 0; i <= buffer_len - sizeof (entry_t);)
+    {
+        const auto entry = (entry_t*)&journal_data[i];
+        if (entry->magic == magic) {
+            ret.push_back(*entry);
+            i += sizeof (entry_t);
+        } else {
+            i++;
+        }
+    }
+
+    return ret;
 }

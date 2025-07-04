@@ -37,6 +37,7 @@ public:
         const uint64_t block_sector_end;    /// on-disk sector end [start, end)
         bool read_only{false};              /// disable alteration to this block
         bool out_of_sync = false;           /// if data changed in memory but not reflected onto file
+        bool in_use{false};                 /// block is in use, set after being thrown out by at, needs manual cleaning. cache won't delete in-use blocks
         basic_io_t & io;                    /// basic IO
         explicit block_data_t(const uint64_t block_size, const uint64_t block_sector_start_,
             const uint64_t block_sector_end_, basic_io_t & io_)
@@ -50,7 +51,18 @@ public:
         void update(const uint8_t * new_data, size_t new_size, uint64_t in_block_offset);   /// update cache
         void sync();                        /// write to disk
         bool is_out_of_sync() const { return out_of_sync; } /// check if update() is called
+        void not_in_use() { std::lock_guard lock(mutex); in_use = false; }
         friend class block_io_t;
+    };
+
+    class safe_block_t {
+        block_data_t & block;
+
+    public:
+        block_data_t & get() const { return block; }
+        block_data_t * operator->() const { return &block; }
+        explicit safe_block_t(block_data_t & block_) : block(block_) {}
+        ~safe_block_t() { block.not_in_use(); }
     };
 
 private:
@@ -73,19 +85,16 @@ public:
 private:
     block_data_t & unblocked_at(uint64_t);  /// generate a block pointer (no mutex)
 
-public:
     /*!
      * @brief generate a block pointer
      * @param index Block index (while disk)
      * @return block_data_t, block pointer
      */
     block_data_t & at(uint64_t index);
-    /*!
-     * @brief generate a block pointer
-     * @param index Block index (while disk)
-     * @return block_data_t, block pointer
-     */
-    block_data_t & operator[](const uint64_t index) { return at(index); }
+
+public:
+
+    safe_block_t safe_at(const uint64_t index) { auto & blk = at(index); return safe_block_t(blk); }
 
     /*!
      * update runtime info in header, static info will be ignored

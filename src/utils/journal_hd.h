@@ -3,8 +3,8 @@
 
 #include <vector>
 #include <string>
-#include <cstdint>
+#include "core/journal.h"
 
-std::vector<std::string> decoder_jentries(const std::vector<std::vector<uint8_t>> & journal);
+std::vector<std::string> decoder_jentries(const std::vector<entry_t> &);
 
 #endif //JOURNAL_HD_H

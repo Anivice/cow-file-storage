@@ -74,6 +74,7 @@ int main(int argc, char *argv[])
             }
 
             manager.free_block(0);
+            manager.free_block(1);
 
             debug_log(manager.free_blocks());
         } catch (...) {

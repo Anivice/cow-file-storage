@@ -5,8 +5,8 @@
 cfs_head_t blk_manager::get_header()
 {
     cfs_head_t head{};
-    auto & head_blk = blk_mapping.at(0);
-    head_blk.get((uint8_t*)&head, sizeof(head), 0);
+    auto head_blk = blk_mapping.safe_at(0);
+    head_blk->get((uint8_t*)&head, sizeof(head), 0);
     return head;
 }
 
@@ -18,7 +18,7 @@ void blk_manager::bitset(const uint64_t index, const bool value)
     block_bitmap->set(index, value);
     block_bitmap_mirror->set(index, value);
 
-    journal->push_action(actions::ACTION_DONE);
+    journal->push_action(actions::ACTION_DONE, actions::ACTION_MODIFY_BITMAP);
 }
 
 blk_manager::blk_manager(block_io_t & block_io)
@@ -48,9 +48,9 @@ blk_manager::blk_manager(block_io_t & block_io)
     auto bitmap_hash = [this, &header](const uint64_t start, const uint64_t end)->uint64_t {
         CRC64 hash;
         for (auto i = start; i < end; i++) {
-            auto & blk = blk_mapping.at(i);
+            auto blk = blk_mapping.safe_at(i);
             std::vector<uint8_t> data; data.resize(header.static_info.block_size);
-            blk.get(data.data(), header.static_info.block_size, 0);
+            blk->get(data.data(), header.static_info.block_size, 0);
             hash.update(data.data(), header.static_info.block_size);
         }
 
@@ -94,8 +94,8 @@ uint64_t blk_manager::allocate_block()
 
     journal->push_action(actions::ACTION_UPDATE_BITMAP_HASH, bitmap_hash_before, bitmap_hash_after);
     blk_mapping.update_runtime_info(header);
-    journal->push_action(actions::ACTION_DONE); // ACTION_UPDATE_BITMAP_HASH
-    journal->push_action(actions::ACTION_DONE); // ACTION_ALLOCATE_BLOCK
+    journal->push_action(actions::ACTION_DONE, actions::ACTION_UPDATE_BITMAP_HASH); // ACTION_UPDATE_BITMAP_HASH
+    journal->push_action(actions::ACTION_DONE, actions::ACTION_ALLOCATE_BLOCK); // ACTION_ALLOCATE_BLOCK
     return last_alloc_blk;
 }
 
@@ -104,7 +104,7 @@ void blk_manager::free_block(const uint64_t block)
     std::lock_guard<std::mutex> guard(mutex);
     if (bitget(block))
     {
-        journal->push_action(actions::ACTION_DEALLOCATE_BLOCK, block);
+        journal->push_action(actions::ACTION_DEALLOCATE_BLOCK, block, block_attr->get(block));
         bitset(block, false);
 
         auto header = get_header();
@@ -115,8 +115,8 @@ void blk_manager::free_block(const uint64_t block)
 
         journal->push_action(actions::ACTION_UPDATE_BITMAP_HASH, bitmap_hash_before, bitmap_hash_after);
         blk_mapping.update_runtime_info(header);
-        journal->push_action(actions::ACTION_DONE); // ACTION_UPDATE_BITMAP_HASH
-        journal->push_action(actions::ACTION_DONE); // ACTION_DEALLOCATE_BLOCK
+        journal->push_action(actions::ACTION_DONE, actions::ACTION_UPDATE_BITMAP_HASH); // ACTION_UPDATE_BITMAP_HASH
+        journal->push_action(actions::ACTION_DONE, actions::ACTION_DEALLOCATE_BLOCK); // ACTION_DEALLOCATE_BLOCK
     }
 }
 
@@ -131,9 +131,9 @@ void blk_manager::set_attr(const uint64_t index, const cfs_blk_attr_t val)
 {
     std::lock_guard lock(mutex);
     const auto before = block_attr->get(index);
-    journal->push_action(actions::ACTION_MODIFY_BLOCK_ATTRIBUTES, index, before, val);
+    journal->push_action(actions::ACTION_MODIFY_BLOCK_ATTRIBUTES, index, before, *(uint16_t*)&val);
     block_attr->set(index, *(uint16_t*)&val);
-    journal->push_action(actions::ACTION_DONE);
+    journal->push_action(actions::ACTION_DONE, actions::ACTION_MODIFY_BLOCK_ATTRIBUTES);
 }
 
 void blk_manager::hash_block(const uint64_t block)
@@ -144,18 +144,18 @@ void blk_manager::hash_block(const uint64_t block)
     {
         auto attr = block_attr->get(block);
         auto before = attr;
-        auto & blk = blk_mapping.at(block);
+        auto blk = blk_mapping.safe_at(block);
         auto & battr = *reinterpret_cast<cfs_blk_attr_t*>(attr);
         battr.quick_hash = 0xFF;
         std::vector<uint8_t> blk_data;
         blk_data.resize(block_size);
-        blk.get(blk_data.data(), block_size, 0);
+        blk->get(blk_data.data(), block_size, 0);
         for (const auto c : blk_data) {
             battr.quick_hash ^= c;
         }
         journal->push_action(actions::ACTION_MODIFY_BLOCK_ATTRIBUTES, block, before, attr);
         block_attr->set(block, attr);
-        journal->push_action(actions::ACTION_DONE);
+        journal->push_action(actions::ACTION_DONE, actions::ACTION_MODIFY_BLOCK_ATTRIBUTES);
     }
 }
 
@@ -164,9 +164,9 @@ void blk_manager::update_bitmap_hash(cfs_head_t & cfs_head)
     auto bitmap_hash = [this, &cfs_head](const uint64_t start, const uint64_t end)->uint64_t {
         CRC64 hash;
         for (auto i = start; i < end; i++) {
-            auto & blk = blk_mapping.at(i);
+            auto blk = blk_mapping.safe_at(i);
             std::vector<uint8_t> data; data.resize(cfs_head.static_info.block_size);
-            blk.get(data.data(), cfs_head.static_info.block_size, 0);
+            blk->get(data.data(), cfs_head.static_info.block_size, 0);
             hash.update(data.data(), cfs_head.static_info.block_size);
         }
 

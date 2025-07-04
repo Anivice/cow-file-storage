@@ -184,7 +184,7 @@ if ("X${CMAKE_BUILD_TYPE}" STREQUAL "XDebug")
 endif ()
 
 add_executable(cfs src/utils/cfs.cpp src/utils/mkfs.cpp src/utils/fsck.cpp src/utils/mount.cpp
-        src/utils/journal_human_readable.cpp src/utils/journal_hd.h)
+        src/utils/journal_hd.cpp src/utils/journal_hd.h)
 target_link_libraries(cfs PRIVATE core)
 add_custom_target(utils ALL
         COMMAND ${CMAKE_COMMAND} -E create_symlink cfs mount.cfs

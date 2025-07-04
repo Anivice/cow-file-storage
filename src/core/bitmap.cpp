@@ -40,9 +40,9 @@ bool bitmap::get(const uint64_t index)
 
     std::lock_guard lock(mutex);
     // debug_log("Block: ", block_offset, ", Byte: ", byte_in_block, ", Bit: ", bit_offset);
-    auto & desired_block = block_mapping.at(block_offset + map_start);
+    auto desired_block = block_mapping.safe_at(block_offset + map_start);
     uint8_t data;
-    desired_block.get(&data, 1, byte_in_block);
+    desired_block->get(&data, 1, byte_in_block);
     data >>= bit_offset;
     const auto result = data & 0x01;
     return result;
@@ -59,9 +59,9 @@ void bitmap::set(const uint64_t index, const bool val)
 
     std::lock_guard lock(mutex);
     // debug_log("Block: ", block_offset, ", Byte: ", byte_in_block, ", Bit: ", bit_offset);
-    auto & desired_block = block_mapping.at(block_offset + map_start);
+    auto desired_block = block_mapping.safe_at(block_offset + map_start);
     uint8_t data;
-    desired_block.get(&data, 1, byte_in_block);
+    desired_block->get(&data, 1, byte_in_block);
     uint8_t comp = 0x01;
     comp <<= bit_offset;
     if (val) {
@@ -69,7 +69,7 @@ void bitmap::set(const uint64_t index, const bool val)
     } else {
         data &= ~comp;
     }
-    desired_block.update(&data, 1, byte_in_block);
+    desired_block->update(&data, 1, byte_in_block);
     // desired_block.sync();
 }
 
@@ -80,8 +80,8 @@ uint64_t bitmap::hash()
 
     std::lock_guard lock(mutex);
     for (uint64_t i = map_start; i < map_end; i++) {
-        auto & desired_block = block_mapping.at(i);
-        desired_block.get(data.data(), blk_size, 0);
+        auto desired_block = block_mapping.safe_at(i);
+        desired_block->get(data.data(), blk_size, 0);
         hash.update(data.data(), blk_size);
     }
 

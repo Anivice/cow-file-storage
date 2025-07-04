@@ -22,7 +22,8 @@ void block_io_t::filesystem_verification()
 
 void block_io_t::unblocked_sync_header()
 {
-    auto & start =  unblocked_at(0), & end = unblocked_at(cfs_head.static_info.sectors - 1);
+    auto & start = unblocked_at(0);
+    auto & end = unblocked_at(cfs_head.static_info.sectors - 1);
     start.read_only = false;
     start.update((uint8_t*)&cfs_head, sizeof(cfs_head_t), 0);
     start.sync();
@@ -32,6 +33,9 @@ void block_io_t::unblocked_sync_header()
     end.update((uint8_t*)&cfs_head, sizeof(cfs_head_t), cfs_head.static_info.block_size - sizeof(cfs_head_t));
     end.sync();
     end.read_only = true;
+
+    start.not_in_use();
+    end.not_in_use();
     // sector_data_t header_sector;
     // std::memcpy(header_sector.data(), &cfs_head, sizeof(cfs_head_t));
     // io.write(header_sector, 0);
@@ -55,7 +59,7 @@ block_io_t::~block_io_t()
 
     cfs_head.runtime_info.flags.clean = true;
     unblocked_sync_header();
-    block_cache.clear();
+    block_cache.clear(); // force free all cached blocks
 }
 
 void block_io_t::update_runtime_info(const cfs_head_t head)
@@ -80,11 +84,24 @@ block_io_t::block_data_t & block_io_t::unblocked_at(const uint64_t index)
         if (index == 0 || index == cfs_head.static_info.blocks - 1) {
             ret->read_only = true;
         }
+
+        ret->in_use = true;
         return *ret;
     }
 
-    if (block_cache.size() == max_cached_block_number) {
-        block_cache.clear();
+    if (block_cache.size() == max_cached_block_number)
+    {
+        std::vector<uint64_t> pending_for_deletion;
+        for (const auto & cached_block : block_cache) {
+            if (!(*(*cached_block.second)).in_use) {
+                pending_for_deletion.push_back(cached_block.first);
+            }
+        }
+
+        for (const auto & cached_block : pending_for_deletion) {
+            // debug_log("Freeing cached block ", cached_block);
+            block_cache.erase(cached_block);
+        }
     }
 
     sector_data_t data_sector;
@@ -107,6 +124,7 @@ block_io_t::block_data_t & block_io_t::unblocked_at(const uint64_t index)
         block_data->read_only = true;
     }
 
+    block_data->in_use = true;
     return *block_data;
 }
 
