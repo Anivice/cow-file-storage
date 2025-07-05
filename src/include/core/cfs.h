@@ -113,7 +113,7 @@ inline uint64_t ceil_div(const uint64_t len, const uint64_t align) {
 }
 
 inline uint64_t get_timestamp() {
-    return std::chrono::high_resolution_clock::now().time_since_epoch().count();
+    return std::chrono::time_point_cast<std::chrono::seconds>(std::chrono::high_resolution_clock::now()).time_since_epoch().count();
 }
 
 #define SECTOR_SIZE (512ULL)

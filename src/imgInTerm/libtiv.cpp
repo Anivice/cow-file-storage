@@ -205,6 +205,10 @@ cimg_library::CImg<unsigned char> load_rgb_CImg(const char *const &filename,
 
 void show(bool result)
 {
+    if (std::getenv("CLEAN") != nullptr && std::string(std::getenv("CLEAN")) == "true") {
+        return;
+    }
+
     std::ios::sync_with_stdio(false);  // apparently makes printing faster
 
     // Platform-specific implementations for determining console size, better

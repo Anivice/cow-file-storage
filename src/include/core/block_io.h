@@ -7,6 +7,8 @@
 #include "core/basic_io.h"
 #include "core/cfs.h"
 
+class read_only_filesystem final : std::exception {};
+
 /*!
  * @brief block_io_t is an abstraction layer operating on block instead of 512 byte sectors, and offer a in-memory cache
  */
@@ -96,12 +98,13 @@ private:
     std::map < uint64_t /* block id */, std::unique_ptr < block_data_ptr_t > > block_cache; /// cache
     std::atomic < uint64_t > max_cached_block_number;   /// max cached block allowed in memory
     std::mutex mutex;
+    std::atomic_bool read_only_fs;
 
     void filesystem_verification();         /// filesystem basic health check
     void unblocked_sync_header();           /// sync head to disk
 
 public:
-    explicit block_io_t(basic_io_t & io);
+    explicit block_io_t(basic_io_t & io, bool read_only_fs = false);
     [[nodiscard]] bool filesystem_dirty_on_mount() const { return filesystem_dirty_on_mount_; } /// is filesystem dirty?
     void sync();                            /// sync
     ~block_io_t();

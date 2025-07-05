@@ -15,6 +15,12 @@ namespace actions {
         ACTION_UPDATE_BITMAP_HASH           /* H */,    // before, after
         ACTION_ALLOCATE_BLOCK               /* I */,
         ACTION_DEALLOCATE_BLOCK             /* J */,    // where
+        ACTION_ABORT_ON_ERROR               /* K */,    // what action, (optional) why
+    };
+
+    enum ActionErrors : uint64_t {
+        ACTION_NO_REASON_AVAILABLE = 0,
+        ACTION_NO_SPACE_AVAILABLE = 1,
     };
 }
 
@@ -77,6 +83,13 @@ struct entry_t {
         } done_action;
 
         struct {
+            uint64_t failed_action_name;
+            uint64_t reason;
+            uint64_t _reserved2;
+            uint64_t _reserved3;
+        } failed_action;
+
+        struct {
             uint64_t operand1;
             uint64_t operand2;
             uint64_t operand3;
@@ -84,6 +97,7 @@ struct entry_t {
         } operands;
     } operands;
 };
+static_assert(sizeof(entry_t) == 64);
 
 class journaling
 {

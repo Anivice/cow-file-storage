@@ -336,7 +336,7 @@ class ringbuffer_test_ final : test::unit_t {
                 cfs_head_t cfs_head{};
                 auto head = block_io.safe_at(0);
                 head->get((uint8_t*)&cfs_head, sizeof(cfs_head), 0);
-                ring_buffer buffer(block_io, cfs_head.static_info.block_size, 1, 5);
+                ring_buffer buffer(block_io, cfs_head.static_info.block_size, 1, cfs_head.static_info.blocks - 2);
                 std::vector<uint8_t> data, data2;
                 data.resize(338);
                 data2.resize(338);

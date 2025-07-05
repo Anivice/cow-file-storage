@@ -22,8 +22,12 @@ void block_io_t::filesystem_verification()
 
 void block_io_t::unblocked_sync_header()
 {
+    if (read_only_fs) {
+        throw read_only_filesystem();
+    }
+
     auto & start = unblocked_at(0);
-    auto & end = unblocked_at(cfs_head.static_info.sectors - 1);
+    auto & end = unblocked_at(cfs_head.static_info.blocks - 1);
     start.read_only = false;
     start.update((uint8_t*)&cfs_head, sizeof(cfs_head_t), 0);
     start.sync();
@@ -42,21 +46,21 @@ void block_io_t::unblocked_sync_header()
     // io.write(header_sector, cfs_head.static_info.sectors - 1);
 }
 
-block_io_t::block_io_t(basic_io_t & io) : io(io)
+block_io_t::block_io_t(basic_io_t & io, const bool read_only_fs) : io(io)
 {
+    this->read_only_fs = read_only_fs;
     filesystem_verification();
-    cfs_head.runtime_info.mount_timestamp = get_timestamp();
-    unblocked_sync_header();
+    if (!read_only_fs) {
+        cfs_head.runtime_info.mount_timestamp = get_timestamp();
+        unblocked_sync_header();
+    }
     max_cached_block_number = 8; // TODO: proper cache size
 }
 
 block_io_t::~block_io_t()
 {
+    if (read_only_fs) return;
     std::lock_guard<std::mutex> lock(mutex);
-    if (cfs_head.runtime_info.flags.clean) {
-        return;
-    }
-
     cfs_head.runtime_info.flags.clean = true;
     unblocked_sync_header();
     block_cache.clear(); // force free all cached blocks
@@ -64,6 +68,7 @@ block_io_t::~block_io_t()
 
 void block_io_t::update_runtime_info(const cfs_head_t head)
 {
+    if (read_only_fs) throw read_only_filesystem();
     std::lock_guard<std::mutex> lock(mutex);
     cfs_head.runtime_info = head.runtime_info;
     unblocked_sync_header();
@@ -73,7 +78,9 @@ void block_io_t::sync()
 {
     std::lock_guard<std::mutex> lock(mutex);
     block_cache.clear();
-    unblocked_sync_header();
+    if (!read_only_fs) {
+        unblocked_sync_header();
+    }
 }
 
 block_io_t::block_data_t & block_io_t::unblocked_at(const uint64_t index)
@@ -84,6 +91,8 @@ block_io_t::block_data_t & block_io_t::unblocked_at(const uint64_t index)
         if (index == 0 || index == cfs_head.static_info.blocks - 1) {
             ret->read_only = true;
         }
+
+        if (read_only_fs) ret->read_only = true;
 
         ret->in_use = true;
         return *ret;
@@ -99,7 +108,7 @@ block_io_t::block_data_t & block_io_t::unblocked_at(const uint64_t index)
         }
 
         for (const auto & cached_block : pending_for_deletion) {
-            debug_log("Freeing cached block ", cached_block);
+            // debug_log("Freeing cached block ", cached_block);
             block_cache.erase(cached_block);
         }
     }
@@ -123,6 +132,8 @@ block_io_t::block_data_t & block_io_t::unblocked_at(const uint64_t index)
     if (index == 0 || index == cfs_head.static_info.blocks - 1) {
         block_data->read_only = true;
     }
+
+    if (read_only_fs) block_data->read_only = true;
 
     block_data->in_use = true;
     return *block_data;
@@ -162,6 +173,6 @@ void block_io_t::block_data_t::sync()
         io.write(data_sector, i);
     }
 
-    debug_log("Sync block (sector ", block_sector_start, " - ", block_sector_end, ")");
+    // debug_log("Sync block (sector ", block_sector_start, " - ", block_sector_end, ")");
     out_of_sync = false;
 }

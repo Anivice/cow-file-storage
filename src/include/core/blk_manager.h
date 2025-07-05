@@ -68,8 +68,6 @@ public:
         void write(const void * data, uint64_t size, uint64_t offset);
         friend class blk_manager;
     };
-
-    friend class block_data_t;
 };
 
 #endif //BLK_MANAGER_T_H

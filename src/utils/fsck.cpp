@@ -158,7 +158,7 @@ int fsck_main(int argc, char **argv)
             basic_io_t io;
             io.open(arg_val.c_str());
             {
-                block_io_t block_io(io);
+                block_io_t block_io(io, true);
                 sector_data_t data;
                 io.read(data, 0);
                 cfs_head_t head{};
