@@ -1,5 +1,11 @@
 # File Storage System
 
+# ! DISCLAIMER !
+
+This project is served as a proof-of-concept, not at anywhere had any intention
+to deliver any production level stability, security, or even functionality.
+The code has low quality, and has more focus on structure than performance.
+
 ## Introduction
 
 Intro goes here
@@ -22,9 +28,12 @@ Different TODOs goes here
  - [x] Ring Buffer
  - [x] Block Allocation and Deletion
  - [x] Block Attributes
+ - [ ] Block Copy-on-Write
  - [ ] Inode
  - [ ] Filesystem Basic Operations
+ - [ ] Filesystem Error Recovery
  - [ ] FUSE Implementation
+ - [ ] Robustness Test Results
 
 ## Used Public Repositories (Embedded in Source Files)
  * [CImg](https://github.com/GreycLab/CImg) Dependency for Terminal Image Viewer

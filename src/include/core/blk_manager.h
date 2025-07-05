@@ -7,12 +7,21 @@
 #include "core/bitmap.h"
 #include "core/block_attr.h"
 
+class filesystem;
+
 /// low level filesystem block manager
 class blk_manager
 {
+private:
     block_io_t & blk_mapping;                       /// block mapping
+
+public:
     const uint64_t blk_count = 0;                   /// block count
     const uint64_t block_size = 0;                  /// block size
+    const uint64_t data_field_block_start = 0;
+    const uint64_t data_field_block_end = 0;
+
+private:
     std::unique_ptr < journaling > journal;         /// journaling
     std::unique_ptr < bitmap > block_bitmap;        /// bitmap
     std::unique_ptr < bitmap > block_bitmap_mirror; /// bitmap mirror
@@ -48,26 +57,17 @@ public:
     cfs_blk_attr_t get_attr(uint64_t index); /// get block attributes
     void set_attr(uint64_t index, cfs_blk_attr_t val); /// set block attributes
     uint64_t free_blocks() { const auto hd = get_header(); return blk_count - hd.runtime_info.allocated_blocks; } /// get how many blocks are free from header into
+
     /// deallocate a block
     /// @param block Target block
     void free_block(uint64_t block);
+
     /// hash a block and update the info in attributes
     /// @param block Block to hash
-    void hash_block(uint64_t block);
+    uint8_t hash_block(uint64_t block);
 
-    class block_data_t {
-        block_io_t::block_data_t & data_;       /// data block pointer
-        const uint64_t block_size;              /// block size
-        const uint64_t data_block_id;           /// block id in data field
-        std::mutex mutex_;                      /// R/W mutex lock
-        explicit block_data_t(block_io_t::block_data_t & data, const uint64_t block_size, const uint64_t data_block_id)
-            : data_(data), block_size(block_size), data_block_id(data_block_id) {}
-
-    public:
-        void read(void * data, uint64_t size, uint64_t offset);
-        void write(const void * data, uint64_t size, uint64_t offset);
-        friend class blk_manager;
-    };
+    [[nodiscard]] block_io_t::safe_block_t safe_get_block(const uint64_t block) { return blk_mapping.safe_at(data_field_block_start + block); }
+    friend class filesystem;
 };
 
 #endif //BLK_MANAGER_T_H

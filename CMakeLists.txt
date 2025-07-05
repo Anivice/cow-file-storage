@@ -34,6 +34,7 @@ endif ()
 
 if ("X${CMAKE_BUILD_TYPE}" STREQUAL "XDebug")
     add_compile_definitions(DEBUG=1)
+    add_compile_definitions(__UNIT_TEST_SUIT_ACTIVE__)
     set(compiler_options
             # Warnings and diagnostics
             -Wall                                   # Enable common warnings

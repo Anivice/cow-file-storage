@@ -13,11 +13,9 @@ class read_only_filesystem final : std::exception {};
  * @brief block_io_t is an abstraction layer operating on block instead of 512 byte sectors, and offer a in-memory cache
  */
 class block_io_t {
-public:
     /// public data block pointer, this element points to a specific block, and write to disk(sync) on deleting.
     class block_data_t;
 
-private:
     /// block_data_t construction helper, to conseal details within the class member
     class block_data_ptr_t {
         block_data_t * ptr; /// block pointer
@@ -30,7 +28,7 @@ private:
         block_data_t & operator*() const { return *ptr; }
     };
 
-public:
+private:
     class block_data_t
     {
         std::mutex mutex{};                 /// R/W mutes
@@ -57,6 +55,8 @@ public:
         friend class block_io_t;
     };
 
+public:
+    /// safe block type which can automatically handle cache situations
     class safe_block_t
     {
         block_data_t * block;
@@ -66,9 +66,11 @@ public:
     public:
         block_data_t * operator->()
         {
-            std::lock_guard lock(mother.mutex);
-            if (mother.block_cache.contains(block_id)) {
-                return block;
+            {
+                std::lock_guard lock(mother.mutex);
+                if (mother.block_cache.contains(block_id)) {
+                    return block;
+                }
             }
 
             // auto renew
@@ -84,8 +86,15 @@ public:
 
         ~safe_block_t()
         {
-            std::lock_guard lock(mother.mutex);
-            if (mother.block_cache.contains(block_id)) {
+            bool not_in_use = false;
+            {
+                std::lock_guard lock(mother.mutex);
+                if (mother.block_cache.contains(block_id)) {
+                    not_in_use = true;
+                }
+            }
+
+            if (not_in_use) {
                 block->not_in_use();
             }
         }
@@ -129,7 +138,9 @@ public:
      */
     void update_runtime_info(cfs_head_t head);
 
+#ifdef __UNIT_TEST_SUIT_ACTIVE__
     [[nodiscard]] uint64_t get_block_size() const { return cfs_head.static_info.block_size; }
+#endif
 };
 
 #endif //BLOCK_IO_H

@@ -8,6 +8,7 @@ void block_io_t::filesystem_verification()
     sector_data_t header_sector;
     io.read(header_sector, 0);
     cfs_head = *reinterpret_cast<cfs_head_t *>(header_sector.data());
+    // FIXME: request fix
     assert_short(cfs_head.magick == cfs_head.magick_ && cfs_head.magick == cfs_magick_number);
     assert_short(cfs_head.info_table_checksum == cfs_head.info_table_checksum_ && cfs_head.info_table_checksum == hashcrc64(cfs_head.static_info));
     if (!cfs_head.runtime_info.flags.clean) {

@@ -200,10 +200,44 @@ int fsck_main(int argc, char **argv)
                 // journaling
                 journaling journal(block_io);
                 const auto journal_entries = journal.export_journaling();
-                const auto decoded = decoder_jentries(journal_entries);
-                for (const auto & entry : decoded) {
+                for (const auto decoded = decoder_jentries(journal_entries);
+                    const auto & entry : decoded)
+                {
                     std::cout << entry << std::endl;
                 }
+                //
+                // std::cout << std::endl << std::endl << std::endl;
+                //
+                // std::vector < entry_t > logs = journal_entries;
+                // logs.erase(logs.begin());
+                // logs.pop_back();
+                // std::vector < entry_t > last_transaction;
+                // std::vector < entry_t > active_transactions;
+                // for (const auto & entry : logs)
+                // {
+                //     if (actions::ACTION_TRANSACTION_BEGIN < entry.operation_name && entry.operation_name < actions::ACTION_TRANSACTION_END) {
+                //         active_transactions.emplace_back(entry);
+                //     }
+                //
+                //     if (entry.operation_name > actions::ACTION_TRANSACTION_END) {
+                //         if (!active_transactions.empty() && active_transactions.back().operation_name == entry.operands.done_action.action_name) {
+                //             active_transactions.pop_back();
+                //         }
+                //     }
+                //
+                //     last_transaction.emplace_back(entry);
+                //
+                //     if (active_transactions.empty()) {
+                //         last_transaction.clear();
+                //     }
+                // }
+                //
+                //
+                // for (const auto decoded = decoder_jentries(last_transaction);
+                //     const auto & entry : decoded)
+                // {
+                //     std::cout << entry << std::endl;
+                // }
             }
             return EXIT_SUCCESS;
         }

@@ -57,6 +57,9 @@ blk_manager::blk_manager(block_io_t & block_io)
         header.static_info.data_block_attribute_table_end,
         blk_count);
 
+    *(uint64_t*)&data_field_block_start = header.static_info.data_table_start;
+    *(uint64_t*)&data_field_block_end = header.static_info.data_table_end;
+
     auto bitmap_hash = [this, &header](const uint64_t start, const uint64_t end)->uint64_t {
         CRC64 hash;
         for (auto i = start; i < end; i++) {
@@ -87,12 +90,13 @@ uint64_t blk_manager::allocate_block()
     last_alloc_blk = header.runtime_info.last_allocated_block;
     header.runtime_info.last_allocated_block = last_alloc_blk;
     bool searched_through = false;
-    while (bitget(last_alloc_blk)) {
+    while (bitget(last_alloc_blk))
+    {
         last_alloc_blk++;
         if (last_alloc_blk >= blk_count && !searched_through) {
             last_alloc_blk = 0;
             searched_through = true;
-        } else if (/* last_alloc_blk >= blk_count && */ searched_through) {
+        } else if (last_alloc_blk >= blk_count && searched_through) {
             throw no_space_available();
         }
     }
@@ -122,9 +126,9 @@ void blk_manager::free_block(const uint64_t block)
 
         auto header = get_header();
         header.runtime_info.allocated_blocks--;
-        uint64_t bitmap_hash_before = header.runtime_info.data_bitmap_checksum;
+        const uint64_t bitmap_hash_before = header.runtime_info.data_bitmap_checksum;
         update_bitmap_hash(header);
-        uint64_t bitmap_hash_after = header.runtime_info.data_bitmap_checksum;
+        const uint64_t bitmap_hash_after = header.runtime_info.data_bitmap_checksum;
 
         ACTION_START(actions::ACTION_UPDATE_BITMAP_HASH, bitmap_hash_before, bitmap_hash_after);
         blk_mapping.update_runtime_info(header);
@@ -149,27 +153,40 @@ void blk_manager::set_attr(const uint64_t index, const cfs_blk_attr_t val)
     ACTION_END(actions::ACTION_MODIFY_BLOCK_ATTRIBUTES);
 }
 
-void blk_manager::hash_block(const uint64_t block)
+#define CRC8_POLY     0x07    /* generator polynomial  x^8 + x^2 + x + 1 */
+#define CRC8_INIT     0x00    /* initial remainder                         */
+#define CRC8_XOR_OUT  0x00    /* final XOR value                           */
+
+uint8_t blk_manager::hash_block(const uint64_t block)
 {
+    uint8_t crc8_table[256] {};
+    for (uint16_t i = 0; i < 256; ++i)
+    {
+        uint8_t crc = i;
+        for (uint8_t b = 0; b < 8; ++b) {
+            crc = (crc & 0x80) ? (crc << 1) ^ CRC8_POLY : crc << 1;
+        }
+        crc8_table[i] = crc;
+    }
+
+    auto crc8 = [&](const void *data, size_t len)->uint8_t
+    {
+        const auto *p = static_cast<const uint8_t *>(data);
+        uint8_t crc = CRC8_INIT;
+
+        for (; len--; ++p) {
+            crc = crc8_table[(crc ^ *p) & 0xFF];
+        }
+        return crc ^ CRC8_XOR_OUT;
+    };
+
     std::lock_guard<std::mutex> guard(mutex);
     assert_short(block < blk_count);
-    if (bitget(block))
-    {
-        const auto attr = block_attr->get(block);
-        const auto before = attr;
-        auto blk = blk_mapping.safe_at(block);
-        auto & battr = *reinterpret_cast<cfs_blk_attr_t*>(attr);
-        battr.quick_hash = 0xFF;
-        std::vector<uint8_t> blk_data;
-        blk_data.resize(block_size);
-        blk->get(blk_data.data(), block_size, 0);
-        for (const auto c : blk_data) {
-            battr.quick_hash ^= c;
-        }
-        ACTION_START(actions::ACTION_MODIFY_BLOCK_ATTRIBUTES, block, before, attr);
-        block_attr->set(block, attr);
-        ACTION_END(actions::ACTION_MODIFY_BLOCK_ATTRIBUTES);
-    }
+    auto blk = blk_mapping.safe_at(block + data_field_block_start);
+    std::vector<uint8_t> blk_data;
+    blk_data.resize(block_size);
+    blk->get(blk_data.data(), block_size, 0);
+    return crc8(blk_data.data(), block_size);
 }
 
 void blk_manager::update_bitmap_hash(cfs_head_t & cfs_head)

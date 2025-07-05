@@ -11,11 +11,20 @@ namespace actions {
         ACTION_DONE = 0xDEADBEEF454E4F44    /* D */,    // operation ID
         ACTION_MODIFY_BITMAP                /* E */,    // where (64bit) [before]8 [after]8
         ACTION_MODIFY_BLOCK_ATTRIBUTES      /* F */,    // where, before, after
-        ACTION_MODIFY_BLOCK_CONTENT         /* G */,    // where, copy-on-write pointer
+        UNUSED_ACTION,
         ACTION_UPDATE_BITMAP_HASH           /* H */,    // before, after
         ACTION_ALLOCATE_BLOCK               /* I */,
         ACTION_DEALLOCATE_BLOCK             /* J */,    // where
         ACTION_ABORT_ON_ERROR               /* K */,    // what action, (optional) why
+
+        ACTION_TRANSACTION_BEGIN,
+        ACTION_TRANSACTION_ALLOCATE_BLOCK,
+        ACTION_TRANSACTION_DEALLOCATE_BLOCK, // where
+        ACTION_TRANSACTION_MODIFY_DATA_FIELD_BLOCK_CONTENT /* G */,    // where, copy-on-write pointer
+        ACTION_TRANSACTION_END,
+
+        ACTION_TRANSACTION_ABORT_ON_ERROR,
+        ACTION_TRANSACTION_DONE, // what
     };
 
     enum ActionErrors : uint64_t {
@@ -74,6 +83,13 @@ struct entry_t {
             uint64_t _reserved;
             uint64_t _reserved2;
         } deallocate_block;
+
+        struct {
+            uint64_t where;
+            uint64_t deallocated_block_status_backup;
+            uint64_t cow_block;
+            uint64_t _reserved;
+        } deallocate_block_tr;
 
         struct {
             uint64_t action_name;
