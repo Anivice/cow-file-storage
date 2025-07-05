@@ -2,20 +2,6 @@
 #include "helper/log.h"
 #include "helper/cpp_assert.h"
 
-#define ACTION_START_NO_ARGS(action) journal->push_action(action); try {
-#define ACTION_START(action, ...) journal->push_action(action, __VA_ARGS__); try {
-#define ACTION_END(action)                                                                                  \
-    }                                                                                                       \
-    catch (no_space_available &) {                                                                          \
-        journal->push_action(actions::ACTION_ABORT_ON_ERROR, action, actions::ACTION_NO_SPACE_AVAILABLE);   \
-        throw;                                                                                              \
-    }                                                                                                       \
-    catch (...) {                                                                                           \
-        journal->push_action(actions::ACTION_ABORT_ON_ERROR, action);                                       \
-        throw;                                                                                              \
-    }                                                                                                       \
-    journal->push_action(actions::ACTION_DONE, action);
-
 cfs_head_t blk_manager::get_header()
 {
     cfs_head_t head{};
@@ -26,11 +12,8 @@ cfs_head_t blk_manager::get_header()
 
 void blk_manager::bitset(const uint64_t index, const bool value)
 {
-    const bool old = bitget(index);
-    ACTION_START(actions::ACTION_MODIFY_BITMAP, index, old, value);
     block_bitmap->set(index, value);
     block_bitmap_mirror->set(index, value);
-    ACTION_END(actions::ACTION_MODIFY_BITMAP);
 }
 
 blk_manager::blk_manager(block_io_t & block_io)
@@ -82,7 +65,6 @@ uint64_t blk_manager::allocate_block()
 {
     std::lock_guard<std::mutex> guard(mutex);
     uint64_t last_alloc_blk = 0;
-    ACTION_START_NO_ARGS(actions::ACTION_ALLOCATE_BLOCK);
     auto header = get_header();
     if (header.runtime_info.allocated_blocks == blk_count) {
         throw no_space_available();
@@ -105,14 +87,8 @@ uint64_t blk_manager::allocate_block()
 
     header.runtime_info.last_allocated_block = last_alloc_blk;
     header.runtime_info.allocated_blocks++;
-    const uint64_t bitmap_hash_before = header.runtime_info.data_bitmap_checksum;
     update_bitmap_hash(header);
-    const uint64_t bitmap_hash_after = header.runtime_info.data_bitmap_checksum;
-
-    ACTION_START(actions::ACTION_UPDATE_BITMAP_HASH, bitmap_hash_before, bitmap_hash_after);
     blk_mapping.update_runtime_info(header);
-    ACTION_END(actions::ACTION_UPDATE_BITMAP_HASH);
-    ACTION_END(actions::ACTION_ALLOCATE_BLOCK); // ACTION_ALLOCATE_BLOCK
     return last_alloc_blk;
 }
 
@@ -121,19 +97,12 @@ void blk_manager::free_block(const uint64_t block)
     std::lock_guard<std::mutex> guard(mutex);
     if (bitget(block))
     {
-        ACTION_START(actions::ACTION_DEALLOCATE_BLOCK, block, block_attr->get(block));
         bitset(block, false);
 
         auto header = get_header();
         header.runtime_info.allocated_blocks--;
-        const uint64_t bitmap_hash_before = header.runtime_info.data_bitmap_checksum;
         update_bitmap_hash(header);
-        const uint64_t bitmap_hash_after = header.runtime_info.data_bitmap_checksum;
-
-        ACTION_START(actions::ACTION_UPDATE_BITMAP_HASH, bitmap_hash_before, bitmap_hash_after);
         blk_mapping.update_runtime_info(header);
-        ACTION_END(actions::ACTION_UPDATE_BITMAP_HASH);
-        ACTION_END(actions::ACTION_DEALLOCATE_BLOCK);
     }
 }
 
@@ -147,10 +116,7 @@ cfs_blk_attr_t blk_manager::get_attr(const uint64_t index)
 void blk_manager::set_attr(const uint64_t index, const cfs_blk_attr_t val)
 {
     std::lock_guard lock(mutex);
-    const auto before = block_attr->get(index);
-    ACTION_START(actions::ACTION_MODIFY_BLOCK_ATTRIBUTES, index, before, *(uint16_t*)&val);
     block_attr->set(index, *(uint16_t*)&val);
-    ACTION_END(actions::ACTION_MODIFY_BLOCK_ATTRIBUTES);
 }
 
 #define CRC8_POLY     0x07    /* generator polynomial  x^8 + x^2 + x + 1 */

@@ -136,6 +136,39 @@ void ring_buffer::write(std::uint8_t *src, std::uint64_t len)
     save_attributes(rd_off, wr_off, flags);
 }
 
+void ring_buffer::retreat_wrote_steps(std::uint64_t steps)
+{
+    std::lock_guard<std::mutex> lock(mutex);
+
+    /* 1. Load state */
+    std::uint64_t rd_off, wr_off;
+    flags_t flags{};
+    get_attributes(rd_off, wr_off, flags);
+
+    /* 2. How many bytes are currently committed?                         *
+     *    If writ < read we have wrapped (flip = 1). Otherwise we have not */
+    const std::uint64_t avail = flags.flipped
+                                ? (buffer_length - rd_off) + wr_off
+                                : (wr_off - rd_off);
+
+    if (steps == 0 || avail == 0)            // nothing to undo
+        return;
+
+    if (steps > avail)                       // don’t under-flow
+        steps = avail;
+
+    /* 3. Compute new logical write position                               *
+     *    new_avail  = bytes that remain valid after the rewind            */
+    const std::uint64_t new_avail  = avail - steps;
+    const std::uint64_t new_wr_off = (rd_off + new_avail) % buffer_length;
+
+    /* 4. Update flip flag: it is set when wr_off logically “laps” rd_off  */
+    flags.flipped = (new_wr_off < rd_off);
+
+    /* 5. Persist the modified state                                       */
+    save_attributes(rd_off, new_wr_off, flags);
+}
+
 std::uint64_t ring_buffer::read(std::uint8_t *dst, std::uint64_t len, bool shadow_read)
 {
     std::lock_guard<std::mutex> lock(mutex);
@@ -180,6 +213,8 @@ std::uint64_t ring_buffer::read(std::uint8_t *dst, std::uint64_t len, bool shado
 
 uint64_t ring_buffer::available_buffer()
 {
+    std::lock_guard<std::mutex> lock(mutex);
+
     /* 1. Load state */
     std::uint64_t rd_off, wr_off;
     flags_t flags{};

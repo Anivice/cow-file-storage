@@ -27,6 +27,7 @@ public:
     void write(uint8_t *, uint64_t);
     uint64_t read(uint8_t *, uint64_t, bool shadow_read = false);
     uint64_t available_buffer();
+    void retreat_wrote_steps(uint64_t);
 };
 
 #endif //RING_BUFFER_H

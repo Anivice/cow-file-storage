@@ -8,23 +8,26 @@
 
 namespace actions {
     enum Actions : uint64_t {
-        ACTION_DONE = 0xDEADBEEF454E4F44    /* D */,    // operation ID
-        ACTION_MODIFY_BITMAP                /* E */,    // where (64bit) [before]8 [after]8
-        ACTION_MODIFY_BLOCK_ATTRIBUTES      /* F */,    // where, before, after
-        UNUSED_ACTION,
-        ACTION_UPDATE_BITMAP_HASH           /* H */,    // before, after
-        ACTION_ALLOCATE_BLOCK               /* I */,
-        ACTION_DEALLOCATE_BLOCK             /* J */,    // where
-        ACTION_ABORT_ON_ERROR               /* K */,    // what action, (optional) why
+        // ACTION_DONE = 0xDEADBEEF454E4F44    /* D */,    // operation ID
+        // ACTION_MODIFY_BITMAP                /* E */,    // where (64bit) [before]8 [after]8
+        // ACTION_MODIFY_BLOCK_ATTRIBUTES      /* F */,    // where, before, after
+        // UNUSED_ACTION,
+        // ACTION_UPDATE_BITMAP_HASH           /* H */,    // before, after
+        // ACTION_ALLOCATE_BLOCK               /* I */,
+        // ACTION_DEALLOCATE_BLOCK             /* J */,    // where
+        // ACTION_ABORT_ON_ERROR               /* K */,    // what action, (optional) why
 
-        ACTION_TRANSACTION_BEGIN,
-        ACTION_TRANSACTION_ALLOCATE_BLOCK,
-        ACTION_TRANSACTION_DEALLOCATE_BLOCK, // where
-        ACTION_TRANSACTION_MODIFY_DATA_FIELD_BLOCK_CONTENT /* G */,    // where, copy-on-write pointer
+        ACTION_TRANSACTION_BEGIN = 0xDEADBEEF454E4F44,
+        ACTION_TRANSACTION_ALLOCATE_BLOCK, // where
+        ACTION_TRANSACTION_DEALLOCATE_BLOCK, // where, old block attr, copy-on-write pointer, block crc64
+        ACTION_TRANSACTION_MODIFY_DATA_FIELD_BLOCK_CONTENT /* G */,    // where, copy-on-write pointer, block crc64
+        ACTION_TRANSACTION_MODIFY_BLOCK_ATTRIBUTES, // where, old, new
         ACTION_TRANSACTION_END,
 
         ACTION_TRANSACTION_ABORT_ON_ERROR,
         ACTION_TRANSACTION_DONE, // what
+
+        ACTION_REVERT_LAST_TRANSACTION,
     };
 
     enum ActionErrors : uint64_t {
@@ -66,7 +69,7 @@ struct entry_t {
         struct {
             uint64_t block_data_field_id;
             uint64_t copy_on_write_pointer;
-            uint64_t _reserved;
+            uint64_t crc64_old_block;
             uint64_t _reserved2;
         } modify_block_content;
 
@@ -88,7 +91,7 @@ struct entry_t {
             uint64_t where;
             uint64_t deallocated_block_status_backup;
             uint64_t cow_block;
-            uint64_t _reserved;
+            uint64_t crc64;
         } deallocate_block_tr;
 
         struct {
@@ -132,6 +135,12 @@ public:
             fs_header.static_info.block_size,
             fs_header.static_info.journal_start,
             fs_header.static_info.journal_end);
+    }
+
+    void revert_last_action()
+    {
+        std::lock_guard<std::mutex> lock(mtx);
+        rb->retreat_wrote_steps(sizeof(entry_t));
     }
 
     void push_action(const actions::Actions action,

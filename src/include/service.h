@@ -38,13 +38,34 @@ class filesystem
     std::unique_ptr < blk_manager > block_manager;
     std::mutex mutex;
 
-public:
     uint64_t unblocked_allocate_new_block();
     void unblocked_deallocate_block(uint64_t data_field_block_id);
-    void revert_transaction();
+    uint64_t unblocked_read_block(uint64_t data_field_block_id, void * buff, uint64_t size, uint64_t offset);
+    uint64_t unblocked_write_block(uint64_t data_field_block_id, void * buff, uint64_t size, uint64_t offset);
 
-    uint64_t allocate_new_block() { std::lock_guard<std::mutex> lock(mutex); return unblocked_allocate_new_block(); }
-    void deallocate_block(const uint64_t data_field_block_id) { std::lock_guard<std::mutex> lock(mutex); unblocked_deallocate_block(data_field_block_id); }
+public:
+    uint64_t allocate_new_block() {
+        std::lock_guard<std::mutex> lock(mutex);
+        return unblocked_allocate_new_block();
+    }
+
+    void deallocate_block(const uint64_t data_field_block_id) {
+        std::lock_guard<std::mutex> lock(mutex);
+        unblocked_deallocate_block(data_field_block_id);
+    }
+
+    uint64_t read_block(const uint64_t data_field_block_id, void * buff, const uint64_t size, const uint64_t offset) {
+        std::lock_guard<std::mutex> lock(mutex);
+        return unblocked_read_block(data_field_block_id, buff, size, offset);
+    }
+
+    uint64_t write_block(uint64_t data_field_block_id, void * buff, const uint64_t size, const uint64_t offset) {
+        std::lock_guard<std::mutex> lock(mutex);
+        return unblocked_write_block(data_field_block_id, buff, size, offset);
+    }
+
+    cfs_blk_attr_t get_attr(uint64_t data_field_block_id);
+    void set_attr(uint64_t data_field_block_id, cfs_blk_attr_t attr);
 
     struct inode_head_t
     {
@@ -61,7 +82,7 @@ public:
             : block_mgr(block_mgr_), inode_block_number(inode_block_number_) { }
     };
 
-public:
+    void revert_transaction();
     explicit filesystem(const char * location);
     ~filesystem();
 };
