@@ -263,7 +263,9 @@ void show(bool result)
     } catch (...) {
     }
 
-    if (std::filesystem::exists(file_loc)) {
-        std::filesystem::remove(file_loc);
-    }
+    try {
+        if (std::filesystem::exists(file_loc)) {
+            std::filesystem::remove(file_loc);
+        }
+    } catch (...) {}
 }

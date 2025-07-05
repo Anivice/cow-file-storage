@@ -105,7 +105,8 @@ void ring_buffer::write(std::uint8_t *src, std::uint64_t len)
     const std::uint64_t free_bytes =
         flags.flipped ? rd_off - wr_off
                        : buffer_length - wr_off + rd_off;
-    if (len > free_bytes) len = free_bytes;          // trim to fit
+    // if (len > free_bytes) len = free_bytes;          // trim to fit
+    assert_short(len <= buffer_length);
 
     /* 3. First slice limited by contiguous space */
     const std::uint64_t cont = contiguous_space(wr_off, rd_off, buffer_length);
@@ -125,6 +126,10 @@ void ring_buffer::write(std::uint8_t *src, std::uint64_t len)
     if (remaining) {
         linear_write(src + first, remaining, meta_size + wr_off);
         wr_off += remaining;
+    }
+
+    if (len > free_bytes) {
+        rd_off = wr_off;
     }
 
     /* 6. Persist */

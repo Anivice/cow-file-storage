@@ -23,20 +23,46 @@
 
 #include <map>
 #include <string>
+#include <random>
 
 namespace test {
+    class unit_t {
+    public:
+        virtual ~unit_t() = default;
+        unit_t() = default;
+        virtual bool run() = 0;
+        virtual std::string success() = 0;
+        virtual std::string failure() = 0;
+        virtual std::string name() = 0;
+    };
 
-class unit_t {
-public:
-    virtual ~unit_t() = default;
-    unit_t() = default;
-    virtual bool run() = 0;
-    virtual std::string success() = 0;
-    virtual std::string failure() = 0;
-    virtual std::string name() = 0;
-};
+    class Uint64RNG {
+    public:
+        using result_type = std::uint64_t;
+        Uint64RNG() : eng_(seed()) {}
+        result_type operator()() { return eng_(); }
+        static constexpr result_type min() { return std::mt19937_64::min(); }
+        static constexpr result_type max() { return std::mt19937_64::max(); }
 
-extern std::map < std::string, void * > unit_tests;
+    private:
+        static result_type seed() {
+            std::random_device rd;
+            const auto hi = static_cast<result_type>(rd());
+            const auto lo = static_cast<result_type>(rd());
+            return (hi << 32) ^ lo;
+        }
+
+        std::mt19937_64 eng_;
+    };
+
+    inline std::uint64_t fast_rand64()
+    {
+        thread_local Uint64RNG rng;
+        return rng();
+    }
+
+
+    extern std::map < std::string, void * > unit_tests;
 } // test
 
 #endif //TEST_H

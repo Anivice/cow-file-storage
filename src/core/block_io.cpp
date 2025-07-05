@@ -99,7 +99,7 @@ block_io_t::block_data_t & block_io_t::unblocked_at(const uint64_t index)
         }
 
         for (const auto & cached_block : pending_for_deletion) {
-            // debug_log("Freeing cached block ", cached_block);
+            debug_log("Freeing cached block ", cached_block);
             block_cache.erase(cached_block);
         }
     }
@@ -162,5 +162,6 @@ void block_io_t::block_data_t::sync()
         io.write(data_sector, i);
     }
 
+    debug_log("Sync block (sector ", block_sector_start, " - ", block_sector_end, ")");
     out_of_sync = false;
 }

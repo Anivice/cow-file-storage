@@ -26,7 +26,7 @@ std::vector<std::string> decoder_jentries(const std::vector<entry_t> & journal)
                 std::stringstream ss;
                 ss << "Modify bitmap of block "
                     << entry.operands.modify_bitmap.where
-                    << " modified from " << entry.operands.modify_bitmap.bit_status_before
+                    << " from " << entry.operands.modify_bitmap.bit_status_before
                     << " to " << entry.operands.modify_bitmap.bit_status_after;
                 result.emplace_back(ss.str());
             }
@@ -47,10 +47,10 @@ std::vector<std::string> decoder_jentries(const std::vector<entry_t> & journal)
                 // ACTION_MODIFY_BLOCK_CONTENT,
             case actions::ACTION_MODIFY_BLOCK_ATTRIBUTES: {
                 std::stringstream ss;
-                ss << "Attribute of block " << entry.operands.modify_block_attributes.where
-                    << " modified from "
-                    << std::hex << entry.operands.modify_block_attributes.bit_status_before << " to "
-                    << std::hex << entry.operands.modify_block_attributes.bit_status_after;
+                ss << "Modify attribute of block " << entry.operands.modify_block_attributes.where
+                    << " from "
+                    << std::hex << std::setw(4) << std::setfill('0') << entry.operands.modify_block_attributes.bit_status_before << " to "
+                    << std::hex << std::setw(4) << std::setfill('0') << entry.operands.modify_block_attributes.bit_status_after;
                 result.emplace_back(ss.str());
             }
             break;

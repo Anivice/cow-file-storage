@@ -50,19 +50,43 @@ public:
         void get(uint8_t * buf, size_t sz, uint64_t in_blk_off);    /// read data
         void update(const uint8_t * new_data, size_t new_size, uint64_t in_block_offset);   /// update cache
         void sync();                        /// write to disk
-        bool is_out_of_sync() const { return out_of_sync; } /// check if update() is called
+        [[nodiscard]] bool is_out_of_sync() const { return out_of_sync; } /// check if update() is called
         void not_in_use() { std::lock_guard lock(mutex); in_use = false; }
         friend class block_io_t;
     };
 
-    class safe_block_t {
-        block_data_t & block;
+    class safe_block_t
+    {
+        block_data_t * block;
+        block_io_t & mother;
+        const uint64_t block_id;
 
     public:
-        block_data_t & get() const { return block; }
-        block_data_t * operator->() const { return &block; }
-        explicit safe_block_t(block_data_t & block_) : block(block_) {}
-        ~safe_block_t() { block.not_in_use(); }
+        block_data_t * operator->()
+        {
+            std::lock_guard lock(mother.mutex);
+            if (mother.block_cache.contains(block_id)) {
+                return block;
+            }
+
+            // auto renew
+            block = &mother.at(block_id);
+            return block;
+        }
+
+        explicit safe_block_t(
+            block_data_t & block_,
+            block_io_t & mother_,
+            const uint64_t block_id_)
+            : block(&block_), mother(mother_), block_id(block_id_) {}
+
+        ~safe_block_t()
+        {
+            std::lock_guard lock(mother.mutex);
+            if (mother.block_cache.contains(block_id)) {
+                block->not_in_use();
+            }
+        }
     };
 
 private:
@@ -94,13 +118,15 @@ private:
 
 public:
 
-    safe_block_t safe_at(const uint64_t index) { auto & blk = at(index); return safe_block_t(blk); }
+    safe_block_t safe_at(const uint64_t index) { auto & blk = at(index); return safe_block_t(blk, *this, index); }
 
     /*!
      * update runtime info in header, static info will be ignored
      * @param head New header
      */
     void update_runtime_info(cfs_head_t head);
+
+    [[nodiscard]] uint64_t get_block_size() const { return cfs_head.static_info.block_size; }
 };
 
 #endif //BLOCK_IO_H
