@@ -236,6 +236,7 @@ void clear_entries(basic_io_t & io, cfs_head_t & head)
     clear_region(head.static_info.data_bitmap_backup_start, head.static_info.data_bitmap_backup_end);
     clear_region(head.static_info.data_block_attribute_table_start, head.static_info.data_block_attribute_table_end);
     clear_region(head.static_info.journal_start, head.static_info.journal_end);
+    clear_region(head.static_info.data_table_start, head.static_info.data_table_start + head.static_info.block_over_sector);
 }
 
 int mkfs_main(int argc, char **argv)

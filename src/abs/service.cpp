@@ -166,7 +166,7 @@ uint64_t filesystem::unblocked_read_block(const uint64_t data_field_block_id, vo
     return size;
 }
 
-uint64_t filesystem::unblocked_write_block(const uint64_t data_field_block_id, void * buff, uint64_t size, const uint64_t offset)
+uint64_t filesystem::unblocked_write_block(const uint64_t data_field_block_id, const void * buff, uint64_t size, const uint64_t offset)
 {
     if (offset > block_manager->block_size) return 0;
     if (offset + size > block_manager->block_size) size = block_manager->block_size - offset;

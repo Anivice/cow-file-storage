@@ -160,7 +160,7 @@ add_library(core SHARED
         src/helper/get_env.cpp          src/include/helper/get_env.h
         src/helper/arg_parser.cpp       src/include/helper/arg_parser.h
         src/helper/lz4.c                src/include/helper/lz4.h
-        src/abs/inode.cpp src/include/inode.h
+        src/abs/inode.cpp
         src/core/crc64sum.cpp           src/include/core/crc64sum.h
         src/core/basic_io.cpp           src/include/core/basic_io.h
         src/core/cfs.cpp                src/include/core/cfs.h
