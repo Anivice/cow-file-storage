@@ -1,4 +1,4 @@
-/* inode.cpp
+/* inode.h
  *
  * Copyright 2025 Anivice Ives
  *
@@ -18,4 +18,19 @@
  * SPDX-License-Identifier: GPL-3.0-or-later
  */
 
-#include "core/inode.h"
+#ifndef INODE_H
+#define INODE_H
+
+#include <vector>
+#include <string>
+#include <sys/stat.h>
+#include <cstdint>
+#include <sys/stat.h>
+#include "service.h"
+
+class inode_t {
+
+public:
+};
+
+#endif //INODE_H

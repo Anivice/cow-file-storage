@@ -8,15 +8,6 @@
 
 namespace actions {
     enum Actions : uint64_t {
-        // ACTION_DONE = 0xDEADBEEF454E4F44    /* D */,    // operation ID
-        // ACTION_MODIFY_BITMAP                /* E */,    // where (64bit) [before]8 [after]8
-        // ACTION_MODIFY_BLOCK_ATTRIBUTES      /* F */,    // where, before, after
-        // UNUSED_ACTION,
-        // ACTION_UPDATE_BITMAP_HASH           /* H */,    // before, after
-        // ACTION_ALLOCATE_BLOCK               /* I */,
-        // ACTION_DEALLOCATE_BLOCK             /* J */,    // where
-        // ACTION_ABORT_ON_ERROR               /* K */,    // what action, (optional) why
-
         ACTION_TRANSACTION_BEGIN = 0xDEADBEEF454E4F44,
         ACTION_TRANSACTION_ALLOCATE_BLOCK, // where
         ACTION_TRANSACTION_DEALLOCATE_BLOCK, // where, old block attr, copy-on-write pointer, block crc64
@@ -24,10 +15,13 @@ namespace actions {
         ACTION_TRANSACTION_MODIFY_BLOCK_ATTRIBUTES, // where, old, new
         ACTION_TRANSACTION_END,
 
-        ACTION_TRANSACTION_ABORT_ON_ERROR,
+        ACTION_TRANSACTION_ABORT_ON_ERROR, // what, reason
         ACTION_TRANSACTION_DONE, // what
 
         ACTION_REVERT_LAST_TRANSACTION,
+        ACTION_FREEZE_BLOCK,
+        ACTION_CLEAR_FROZEN_BLOCK_ALL,
+        ACTION_CLEAR_FROZEN_BLOCK_BUT_ONE,
     };
 
     enum ActionErrors : uint64_t {

@@ -10,6 +10,10 @@ std::string get_name_by_id(const uint64_t id)
         case actions::ACTION_NO_REASON_AVAILABLE: return "No Reason Available";
         case actions::ACTION_NO_SPACE_AVAILABLE: return "Space Depleted";
 
+        case actions::ACTION_FREEZE_BLOCK: return color::color(5,2,4) +"Freeze Block" + color::no_color();
+        case actions::ACTION_CLEAR_FROZEN_BLOCK_ALL: return color::color(5,2,4) +"Clear Frozen Blocks" + color::no_color();
+        case actions::ACTION_CLEAR_FROZEN_BLOCK_BUT_ONE: return color::color(5,2,4) + "Clear Frozen Blocks But Level One" + color::no_color();
+
         case actions::ACTION_TRANSACTION_ALLOCATE_BLOCK: return color::color(4,0,5) + "Transaction Allocate Block" + color::no_color();
         case actions::ACTION_TRANSACTION_DEALLOCATE_BLOCK: return color::color(0,4,5) + "Transaction Deallocate Block" + color::no_color();
         case actions::ACTION_REVERT_LAST_TRANSACTION: return color::color(5,2,4) + "Revert Last Transaction" + color::no_color();
@@ -77,6 +81,9 @@ std::vector<std::string> decoder_jentries(const std::vector<entry_t> & journal)
             break;
 
             case actions::ACTION_REVERT_LAST_TRANSACTION:
+            case actions::ACTION_FREEZE_BLOCK:
+            case actions::ACTION_CLEAR_FROZEN_BLOCK_ALL:
+            case actions::ACTION_CLEAR_FROZEN_BLOCK_BUT_ONE:
             {
                 std::stringstream ss;
                 ss << time_to_hdtime(entry.timestamp) << ": " << get_name_by_id(entry.operation_name);

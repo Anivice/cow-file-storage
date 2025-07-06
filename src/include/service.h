@@ -2,28 +2,46 @@
 #define SERVICE_H
 
 #include <memory>
-#include <sys/stat.h>
 #include "core/blk_manager.h"
+#if DEBUG
+# include "helper/err_type.h"
+#endif
 
-#define MAKE_ERROR_TYPE(name) class name final : public std::exception      \
+#if DEBUG
+# define MAKE_ERROR_TYPE(name)                                              \
+class name final                                                            \
+    : public runtime_error                                                  \
+{                                                                           \
+    public:                                                                 \
+    explicit name(const std::string & init_msg_)                            \
+        : runtime_error(std::string(#name) + " " + init_msg_)               \
+    {                                                                       \
+    }                                                                       \
+};
+#else
+# define MAKE_ERROR_TYPE(name)                                              \
+class name final                                                            \
+    : public std::exception                                                 \
 {                                                                           \
     std::string what_;                                                      \
     public:                                                                 \
-    explicit name(const std::string & init_msg_) {                          \
-        what_ += #name " ";                                                 \
-        what_ += init_msg_;                                                 \
+    explicit name(...)                                                      \
+    {                                                                       \
+        what_ = #name;                                                      \
     }                                                                       \
                                                                             \
     const char * what() const noexcept {                                    \
         return what_.c_str();                                               \
     }                                                                       \
 };
+#endif
 
 namespace fs_error {
     MAKE_ERROR_TYPE(cannot_open_disk);
     MAKE_ERROR_TYPE(filesystem_block_mapping_init_error);
     MAKE_ERROR_TYPE(filesystem_block_manager_init_error);
     MAKE_ERROR_TYPE(filesystem_space_depleted);
+    MAKE_ERROR_TYPE(filesystem_frozen_block_protection);
     MAKE_ERROR_TYPE(unknown_error);
 }
 
@@ -66,12 +84,9 @@ public:
 
     cfs_blk_attr_t get_attr(uint64_t data_field_block_id);
     void set_attr(uint64_t data_field_block_id, cfs_blk_attr_t attr);
-
-    struct inode_head_t
-    {
-        char filename[CFS_MAX_FILENAME_LENGTH] {};
-        struct stat file_attributes {};
-    };
+    void freeze_block();
+    void clear_frozen_but_1();
+    void clear_frozen_all();
 
     class inode_t {
         blk_manager & block_mgr;

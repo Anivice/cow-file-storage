@@ -1,4 +1,4 @@
-/* inode.h
+/* inode.cpp
  *
  * Copyright 2025 Anivice Ives
  *
@@ -18,14 +18,4 @@
  * SPDX-License-Identifier: GPL-3.0-or-later
  */
 
-#ifndef INODE_H
-#define INODE_H
-
-#include <vector>
-#include <string>
-#include <sys/stat.h>
-#include <cstdint>
-
-#define BLOCK_SIZE (1024 * 4) /* 4KB blocks */
-
-#endif //INODE_H
+#include "inode.h"

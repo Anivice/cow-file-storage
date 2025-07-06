@@ -57,10 +57,8 @@ uint64_t filesystem::unblocked_allocate_new_block()
     try {
         new_block_id = block_manager->allocate_block();
     } catch (...) { }
-    uint8_t hash = 0;
     if (new_block_id != UINT64_MAX) {
         ACTION_START(actions::ACTION_TRANSACTION_ALLOCATE_BLOCK, new_block_id);
-        hash = block_manager->hash_block(new_block_id);
         ACTION_END(actions::ACTION_TRANSACTION_ALLOCATE_BLOCK);
     }
     else
@@ -96,7 +94,6 @@ uint64_t filesystem::unblocked_allocate_new_block()
             try { // try again
                 new_block_id = block_manager->allocate_block();
                 ACTION_START(actions::ACTION_TRANSACTION_ALLOCATE_BLOCK, new_block_id);
-                hash = block_manager->hash_block(new_block_id);
                 ACTION_END(actions::ACTION_TRANSACTION_ALLOCATE_BLOCK);
             } catch (...) {
                 // WTF???
@@ -115,9 +112,9 @@ uint64_t filesystem::unblocked_allocate_new_block()
     block_manager->set_attr(new_block_id, cfs_blk_attr_t{
         .frozen = 0,
         .type = COW_REDUNDANCY_TYPE,
-        .quick_hash = hash,
         .type_backup = 0,
-        .cow_refresh_count = 0
+        .cow_refresh_count = 0,
+        .links = 0
     });
 
     return new_block_id;
@@ -410,6 +407,7 @@ void filesystem::set_attr(const uint64_t data_field_block_id, const cfs_blk_attr
     std::lock_guard<std::mutex> lock(mutex);
     const auto old_attr = block_manager->get_attr(data_field_block_id);
     if (old_attr.frozen) {
+        throw fs_error::filesystem_frozen_block_protection("Attempting to modify a frozen block");
         return;
     }
 
@@ -417,4 +415,59 @@ void filesystem::set_attr(const uint64_t data_field_block_id, const cfs_blk_attr
         data_field_block_id, cfs_blk_attr_t_to_uint16(old_attr), cfs_blk_attr_t_to_uint16(attr))
     block_manager->set_attr(data_field_block_id, attr);
     ACTION_END(actions::ACTION_TRANSACTION_MODIFY_BLOCK_ATTRIBUTES)
+}
+
+void filesystem::freeze_block()
+{
+    std::lock_guard<std::mutex> lock(mutex);
+    ACTION_START_NO_ARGS(actions::ACTION_FREEZE_BLOCK)
+    for (uint64_t i = 0; i < block_manager->blk_count; i++)
+    {
+        if (block_manager->block_allocated(i))
+        {
+            if (auto attr = block_manager->get_attr(i);
+                attr.frozen < 3 && attr.type != COW_REDUNDANCY_TYPE)
+            {
+                attr.frozen++;
+                block_manager->set_attr(i, attr);
+            }
+        }
+    }
+    ACTION_END(actions::ACTION_FREEZE_BLOCK)
+}
+
+void filesystem::clear_frozen_but_1()
+{
+    std::lock_guard<std::mutex> lock(mutex);
+    ACTION_START_NO_ARGS(actions::ACTION_CLEAR_FROZEN_BLOCK_BUT_ONE)
+    for (uint64_t i = 0; i < block_manager->blk_count; i++)
+    {
+        if (block_manager->block_allocated(i))
+        {
+            if (auto attr = block_manager->get_attr(i); attr.frozen > 1)
+            {
+                attr.frozen = 0;
+                block_manager->set_attr(i, attr);
+            }
+        }
+    }
+    ACTION_END(actions::ACTION_CLEAR_FROZEN_BLOCK_BUT_ONE)
+}
+
+void filesystem::clear_frozen_all()
+{
+    std::lock_guard<std::mutex> lock(mutex);
+    ACTION_START_NO_ARGS(actions::ACTION_CLEAR_FROZEN_BLOCK_ALL)
+    for (uint64_t i = 0; i < block_manager->blk_count; i++)
+    {
+        if (block_manager->block_allocated(i))
+        {
+            if (auto attr = block_manager->get_attr(i); attr.frozen > 0)
+            {
+                attr.frozen = 0;
+                block_manager->set_attr(i, attr);
+            }
+        }
+    }
+    ACTION_END(actions::ACTION_CLEAR_FROZEN_BLOCK_ALL)
 }

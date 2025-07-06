@@ -10,13 +10,11 @@
 
 struct cfs_blk_attr_t
 {
-    // cow status
-    uint16_t frozen:1;      // is snapshot frozen
-    // block type
-    uint16_t type:2;        // 1 -> index, 2 -> pointer, 3 -> storage, 0 -> copy-on-write redundancy
-    uint16_t quick_hash:8;  // xor hash, to fast check integrity
-    uint16_t type_backup:2; // old type before cow
-    uint16_t cow_refresh_count:3; // refresh count, if filesystem is out of block, the block with the lowest cow_refresh_count will be deallocated first
+    uint16_t frozen:2;              // is snapshot frozen, 0 -> not frozen, 1 -> newly frozen, 2,3 -> old freezed blocks
+    uint16_t type:2;                // 1 -> index, 2 -> pointer, 3 -> storage, 0 -> copy-on-write redundancy
+    uint16_t type_backup:2;         // old type before cow
+    uint16_t cow_refresh_count:3;   // refresh count, if filesystem is out of block, the block with the lowest cow_refresh_count will be deallocated first
+    uint16_t links:7;               // index link count, max 127 inode share
 };
 static_assert(sizeof(cfs_blk_attr_t) == 2);
 

@@ -116,47 +116,7 @@ cfs_blk_attr_t blk_manager::get_attr(const uint64_t index)
 void blk_manager::set_attr(const uint64_t index, const cfs_blk_attr_t val)
 {
     std::lock_guard lock(mutex);
-    auto attr = block_attr->get(index);
-    if ((*reinterpret_cast<cfs_blk_attr_t *>(&attr)).frozen) {
-        throw runtime_error("Attempting to modify a frozen block");
-    }
     block_attr->set(index, *(uint16_t*)&val);
-}
-
-#define CRC8_POLY     0x07    /* generator polynomial  x^8 + x^2 + x + 1 */
-#define CRC8_INIT     0x00    /* initial remainder                         */
-#define CRC8_XOR_OUT  0x00    /* final XOR value                           */
-
-uint8_t blk_manager::hash_block(const uint64_t block)
-{
-    uint8_t crc8_table[256] {};
-    for (uint16_t i = 0; i < 256; ++i)
-    {
-        uint8_t crc = i;
-        for (uint8_t b = 0; b < 8; ++b) {
-            crc = (crc & 0x80) ? (crc << 1) ^ CRC8_POLY : crc << 1;
-        }
-        crc8_table[i] = crc;
-    }
-
-    auto crc8 = [&](const void *data, size_t len)->uint8_t
-    {
-        const auto *p = static_cast<const uint8_t *>(data);
-        uint8_t crc = CRC8_INIT;
-
-        for (; len--; ++p) {
-            crc = crc8_table[(crc ^ *p) & 0xFF];
-        }
-        return crc ^ CRC8_XOR_OUT;
-    };
-
-    std::lock_guard<std::mutex> guard(mutex);
-    assert_short(block < blk_count);
-    auto blk = blk_mapping.safe_at(block + data_field_block_start);
-    std::vector<uint8_t> blk_data;
-    blk_data.resize(block_size);
-    blk->get(blk_data.data(), block_size, 0);
-    return crc8(blk_data.data(), block_size);
 }
 
 void blk_manager::update_bitmap_hash(cfs_head_t & cfs_head)

@@ -62,10 +62,6 @@ public:
     /// @param block Target block
     void free_block(uint64_t block);
 
-    /// hash a block and update the info in attributes
-    /// @param block Block to hash
-    uint8_t hash_block(uint64_t block);
-
     [[nodiscard]] block_io_t::safe_block_t safe_get_block(const uint64_t block)
     {
         if (get_attr(block).frozen) {
