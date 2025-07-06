@@ -116,6 +116,10 @@ cfs_blk_attr_t blk_manager::get_attr(const uint64_t index)
 void blk_manager::set_attr(const uint64_t index, const cfs_blk_attr_t val)
 {
     std::lock_guard lock(mutex);
+    auto attr = block_attr->get(index);
+    if ((*reinterpret_cast<cfs_blk_attr_t *>(&attr)).frozen) {
+        throw runtime_error("Attempting to modify a frozen block");
+    }
     block_attr->set(index, *(uint16_t*)&val);
 }
 

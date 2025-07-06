@@ -3,7 +3,6 @@
 
 #include <memory>
 #include "core/journal.h"
-#include "core/crc64sum.h"
 #include "core/bitmap.h"
 #include "core/block_attr.h"
 
@@ -56,6 +55,7 @@ public:
     uint64_t allocate_block(); /// allocate block
     cfs_blk_attr_t get_attr(uint64_t index); /// get block attributes
     void set_attr(uint64_t index, cfs_blk_attr_t val); /// set block attributes
+    bool block_allocated(const uint64_t index) { std::lock_guard lock(mutex); return bitget(index); }
     uint64_t free_blocks() { const auto hd = get_header(); return blk_count - hd.runtime_info.allocated_blocks; } /// get how many blocks are free from header into
 
     /// deallocate a block
@@ -66,7 +66,14 @@ public:
     /// @param block Block to hash
     uint8_t hash_block(uint64_t block);
 
-    [[nodiscard]] block_io_t::safe_block_t safe_get_block(const uint64_t block) { return blk_mapping.safe_at(data_field_block_start + block); }
+    [[nodiscard]] block_io_t::safe_block_t safe_get_block(const uint64_t block)
+    {
+        if (get_attr(block).frozen) {
+            return blk_mapping.safe_at(data_field_block_start + block, true);
+        }
+        return blk_mapping.safe_at(data_field_block_start + block);
+    }
+
     friend class filesystem;
 };
 

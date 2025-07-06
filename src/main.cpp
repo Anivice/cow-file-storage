@@ -10,8 +10,8 @@ int main(int argc, char *argv[])
         attr.type = POINTER_TYPE;
         fs.set_attr(new_block, attr);
         debug_log(new_block);
-        fs.deallocate_block(new_block);
-        fs.revert_transaction();
+        // fs.deallocate_block(new_block);
+        // fs.revert_transaction();
     } catch (const std::exception &e) {
         error_log(e.what());
     }

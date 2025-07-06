@@ -70,7 +70,7 @@ struct entry_t {
             uint64_t block_data_field_id;
             uint64_t copy_on_write_pointer;
             uint64_t crc64_old_block;
-            uint64_t _reserved2;
+            uint64_t is_modifying_a_frozen_block;
         } modify_block_content;
 
         struct {

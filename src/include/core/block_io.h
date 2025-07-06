@@ -133,7 +133,14 @@ private:
 
 public:
 
-    safe_block_t safe_at(const uint64_t index) { auto & blk = at(index); return safe_block_t(blk, *this, index); }
+    safe_block_t safe_at(const uint64_t index, bool get_as_read_only = false)
+    {
+        auto & blk = at(index);
+        if (get_as_read_only) {
+            blk.read_only = true;
+        }
+        return safe_block_t(blk, *this, index);
+    }
 
     /*!
      * update runtime info in header, static info will be ignored
