@@ -21,6 +21,7 @@
 #include <atomic>
 #include <algorithm>
 
+#include "../include/core/block_attr.h"
 #include "core/cfs.h"
 #include "helper/cpp_assert.h"
 #include "helper/log.h"
@@ -215,11 +216,16 @@ cfs_head_t make_head(const sector_t sectors, const uint64_t block_size)
 
 void clear_entries(basic_io_t & io, cfs_head_t & head)
 {
-    auto clear_region = [&](const uint64_t start, const uint64_t end)->uint64_t
+    auto clear_region = [&](const uint64_t start, const uint64_t end, const bool first_bit_being_1 = false)->uint64_t
     {
         CRC64 hash_empty;
         sector_data_t data{};
-        for (uint64_t i = start; i < end; ++i) {
+        for (uint64_t i = start; i < end; ++i)
+        {
+            if (first_bit_being_1 && i == start) {
+                data[0] = 0x01;
+            }
+
             for (uint64_t j = 0; j < head.static_info.block_over_sector; j++) {
                 // debug_log("Scrubbing sector ", j + i * head.static_info.block_over_sector);
                 io.write(data, j + i * head.static_info.block_over_sector);
@@ -232,11 +238,22 @@ void clear_entries(basic_io_t & io, cfs_head_t & head)
 
     clear_region(0, 1);
     clear_region(head.static_info.blocks - 1, head.static_info.blocks);
-    head.runtime_info.data_bitmap_checksum = clear_region(head.static_info.data_bitmap_start, head.static_info.data_bitmap_end);
-    clear_region(head.static_info.data_bitmap_backup_start, head.static_info.data_bitmap_backup_end);
+    head.runtime_info.data_bitmap_checksum = clear_region(head.static_info.data_bitmap_start, head.static_info.data_bitmap_end, true);
+    clear_region(head.static_info.data_bitmap_backup_start, head.static_info.data_bitmap_backup_end, true);
     clear_region(head.static_info.data_block_attribute_table_start, head.static_info.data_block_attribute_table_end);
     clear_region(head.static_info.journal_start, head.static_info.journal_end);
     clear_region(head.static_info.data_table_start, head.static_info.data_table_start + head.static_info.block_over_sector);
+
+    sector_data_t data{};
+    cfs_blk_attr_t attr{
+        .frozen = 0,
+        .type = INDEX_TYPE,
+        .type_backup = 0,
+        .cow_refresh_count= 0,
+        .links = 1,
+    };
+    std::memcpy(data.data(), &attr, sizeof(attr));
+    io.write(data, head.static_info.data_block_attribute_table_start * head.static_info.block_over_sector);
 }
 
 int mkfs_main(int argc, char **argv)

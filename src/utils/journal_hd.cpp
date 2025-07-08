@@ -20,6 +20,7 @@ std::string get_name_by_id(const uint64_t id)
         case actions::ACTION_TRANSACTION_MODIFY_BLOCK_ATTRIBUTES: return color::color(5,3,1) + "Transaction Modify Block Attributes" + color::no_color();
         case actions::ACTION_TRANSACTION_ABORT_ON_ERROR: return color::color(5,0,0) + "Transaction Abort On Error" + color::no_color();
         case actions::ACTION_TRANSACTION_DONE: return color::color(0,5,0) + "Transaction Done" + color::no_color();
+        case actions::ACTION_TRANSACTION_MODIFY_DATA_FIELD_BLOCK_CONTENT: return color::color(0,5,0) + "Transaction Modify Data Field Block Content" + color::no_color();
 
         default: return "";
     }
@@ -59,6 +60,15 @@ std::vector<std::string> decoder_jentries(const std::vector<entry_t> & journal)
                     << std::hex << std::setw(4) << std::setfill('0') << entry.operands.deallocate_block_tr.deallocated_block_status_backup
                     << ", COW Block: " << std::dec << entry.operands.deallocate_block_tr.cow_block
                     << ", CRC64: " << std::hex << std::setw(16) << std::setfill('0') << entry.operands.deallocate_block_tr.crc64;
+                result.emplace_back(ss.str());
+            }
+            break;
+            case actions::ACTION_TRANSACTION_MODIFY_DATA_FIELD_BLOCK_CONTENT: {
+                std::stringstream ss;
+                ss << time_to_hdtime(entry.timestamp) << ": " << get_name_by_id(entry.operation_name)
+                    << " " << entry.operands.operands.operand1
+                    << ", COW Block: " << std::dec << entry.operands.operands.operand2
+                    << ", CRC64: " << std::hex << std::setw(16) << std::setfill('0') << entry.operands.operands.operand3;
                 result.emplace_back(ss.str());
             }
             break;

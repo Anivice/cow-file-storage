@@ -175,7 +175,7 @@ uint64_t filesystem::unblocked_write_block(const uint64_t data_field_block_id, c
 
     if (block_manager->get_attr(data_field_block_id).frozen)
     {
-        new_block = allocate_new_block();
+        new_block = unblocked_allocate_new_block();
         ACTION_START(actions::ACTION_TRANSACTION_MODIFY_DATA_FIELD_BLOCK_CONTENT, data_field_block_id, new_block, data_block->crc64(), 1);
         auto new_cow = block_manager->safe_get_block(new_block);
         std::vector<uint8_t> old_block_data;
@@ -191,7 +191,7 @@ uint64_t filesystem::unblocked_write_block(const uint64_t data_field_block_id, c
     else
     {
         try {
-            new_block = allocate_new_block();
+            new_block = unblocked_allocate_new_block();
         } catch (fs_error::filesystem_space_depleted &) {
             data_block->update((uint8_t*)buff, size, offset);
             return size;
@@ -212,6 +212,18 @@ uint64_t filesystem::unblocked_write_block(const uint64_t data_field_block_id, c
         ACTION_END(actions::ACTION_TRANSACTION_MODIFY_DATA_FIELD_BLOCK_CONTENT);
         return size;
     }
+}
+
+void filesystem::delink_block(uint64_t data_field_block_id)
+{
+    std::lock_guard<std::mutex> lock(mutex);
+    const auto old_attr = block_manager->get_attr(data_field_block_id);
+    auto new_attr = old_attr;
+    if (new_attr.links > 0) new_attr.links -= 1;
+    ACTION_START(actions::ACTION_TRANSACTION_MODIFY_BLOCK_ATTRIBUTES,
+        data_field_block_id, cfs_blk_attr_t_to_uint16(old_attr), cfs_blk_attr_t_to_uint16(new_attr))
+    block_manager->set_attr(data_field_block_id, new_attr);
+    ACTION_END(actions::ACTION_TRANSACTION_MODIFY_BLOCK_ATTRIBUTES)
 }
 
 void filesystem::revert_transaction()
@@ -294,12 +306,6 @@ void filesystem::revert_transaction()
                 } catch (...) {
                     error_log("Updating bitmap checksum failed!");
                 }
-
-                if (last_transaction.back().operation_name == actions::ACTION_TRANSACTION_DONE) {
-                    block_manager->journal->revert_last_action();
-                }
-
-                block_manager->journal->revert_last_action();
             }
 
             return;
@@ -314,11 +320,6 @@ void filesystem::revert_transaction()
 
             block_manager->free_block(new_block_id);
 
-            if (last_transaction.back().operation_name == actions::ACTION_TRANSACTION_DONE) {
-                block_manager->journal->revert_last_action();
-            }
-
-            block_manager->journal->revert_last_action();
             return;
         }
 
@@ -339,11 +340,6 @@ void filesystem::revert_transaction()
 
             block_manager->set_attr(block_id, *(cfs_blk_attr_t*)&before);
 
-            if (last_transaction.back().operation_name == actions::ACTION_TRANSACTION_DONE) {
-                block_manager->journal->revert_last_action();
-            }
-
-            block_manager->journal->revert_last_action();
             return;
         }
 
@@ -382,12 +378,6 @@ void filesystem::revert_transaction()
                 error_log("Abort: Destination COW no correct data");
                 return;
             }
-
-            if (last_transaction.back().operation_name == actions::ACTION_TRANSACTION_DONE) {
-                block_manager->journal->revert_last_action();
-            }
-
-            block_manager->journal->revert_last_action();
 
             return;
         }

@@ -131,11 +131,11 @@ public:
             fs_header.static_info.journal_end);
     }
 
-    void revert_last_action()
-    {
-        std::lock_guard<std::mutex> lock(mtx);
-        rb->retreat_wrote_steps(sizeof(entry_t));
-    }
+    // void revert_last_action()
+    // {
+    //     std::lock_guard<std::mutex> lock(mtx);
+    //     rb->retreat_wrote_steps(sizeof(entry_t));
+    // }
 
     void push_action(const actions::Actions action,
         const uint64_t operand1 = 0,

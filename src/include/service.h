@@ -108,12 +108,16 @@ class filesystem
     void clear_frozen_but_1();
     void clear_frozen_all();
     void revert_transaction();
+    void delink_block(uint64_t data_field_block_id);
 
+public:
     class inode_t
     {
         filesystem & fs;
         const uint64_t inode_id; // data block id for inode
         const uint64_t block_size;
+        const uint64_t inode_level_pointers;
+        const uint64_t block_max_entries;
         std::mutex mutex;
 
         struct inode_header_t {
@@ -123,12 +127,15 @@ class filesystem
 
         inode_header_t get_header();
         void save_header(inode_header_t);
-        std::vector < uint64_t > get_block_pointers();
-        void save_block_pointers(const std::vector < uint64_t > & block_pointers);
+        std::vector < uint64_t > get_inode_block_pointers(); /// get pointers inside inode (level 1 pointers)
+        void save_inode_block_pointers(const std::vector < uint64_t > & block_pointers); /// save pointers to inode (level 1 pointers)
+    public:
+        void unblocked_resize(uint64_t file_length);
+        std::vector < uint64_t > get_pointer_by_block(uint64_t data_field_block_id);
+        void save_pointer_to_block(uint64_t data_field_block_id, const std::vector < uint64_t > & block_pointers);
 
     public:
         explicit inode_t(filesystem & fs, uint64_t inode_id, uint64_t block_size);
-        void resize(uint64_t block_size);
         void read(void *buff, uint64_t offset, uint64_t size);
         void write(const void * buff, uint64_t offset, uint64_t size);
         void rename(const char * new_name);
