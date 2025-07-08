@@ -27,7 +27,7 @@
 void basic_io_t::open(const char *file_name)
 {
     std::lock_guard<std::mutex> lock(mutex);
-    fd = ::open(file_name, O_DIRECT | O_RDWR | O_DSYNC | O_LARGEFILE | O_NOATIME | O_SYNC);
+    fd = ::open(file_name, /* O_DIRECT | */ O_RDWR /* | O_DSYNC | O_LARGEFILE | O_NOATIME | O_SYNC */);
     flock lk = {
         .l_type   = F_WRLCK,   // write lock
         .l_whence = SEEK_SET,  // lock the whole file

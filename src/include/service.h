@@ -24,6 +24,7 @@
 #include <memory>
 #include <sys/stat.h>
 #include "core/blk_manager.h"
+#include "helper/cpp_assert.h"
 #if DEBUG
 # include "helper/err_type.h"
 #endif
@@ -97,7 +98,8 @@ class filesystem
         return unblocked_read_block(data_field_block_id, buff, size, offset);
     }
 
-    uint64_t write_block(uint64_t data_field_block_id, const void * buff, const uint64_t size, const uint64_t offset) {
+    uint64_t write_block(uint64_t data_field_block_id, const void * buff, uint64_t size, const uint64_t offset)
+    {
         std::lock_guard<std::mutex> lock(mutex);
         return unblocked_write_block(data_field_block_id, buff, size, offset);
     }
@@ -118,8 +120,70 @@ public:
         const uint64_t block_size;
         const uint64_t inode_level_pointers;
         const uint64_t block_max_entries;
-        std::mutex mutex;
+        std::vector<uint64_t> block_pointers;
 
+        class level3 {
+        public:
+            filesystem & fs;
+            uint64_t data_field_block_id;
+            bool control_active = false;
+            const uint64_t block_size;
+            bool newly_created = false;
+
+            void safe_delete(uint64_t & block_id)
+            {
+                assert_short(block_id != 0);
+                const auto attr = fs.get_attr(block_id);
+                if (attr.frozen) {
+                    return;
+                }
+
+                if (attr.links > 1) {
+                    fs.delink_block(block_id);
+                } else {
+                    fs.deallocate_block(block_id);
+                }
+
+                block_id = 0;
+            }
+
+            uint64_t mkblk()
+            {
+                const auto new_block_id = fs.allocate_new_block();
+                constexpr cfs_blk_attr_t pointer_attributes = {
+                    .frozen = 0,
+                    .type = POINTER_TYPE,
+                    .type_backup = 0,
+                    .cow_refresh_count = 0,
+                    .links = 1,
+                };
+                fs.set_attr(new_block_id, pointer_attributes);
+                std::vector<uint8_t> block_data_empty;
+                block_data_empty.resize(block_size);
+                std::memset(block_data_empty.data(), 0, block_size);
+                fs.write_block(new_block_id, block_data_empty.data(), block_size, 0);
+                return new_block_id;
+            }
+
+            explicit level3(const uint64_t data_field_block_id, filesystem & fs, const bool control_active, const uint64_t block_size)
+                : fs(fs), data_field_block_id(data_field_block_id), control_active(control_active), block_size(block_size) { }
+            explicit level3(filesystem & fs, const bool control_active, const uint64_t block_size)
+                : fs(fs), control_active(control_active), block_size(block_size)
+            {
+                if (control_active) {
+                    data_field_block_id = mkblk();
+                }
+            }
+
+            ~level3()
+            {
+                if (control_active) {
+                    safe_delete(data_field_block_id);
+                }
+            }
+        };
+
+        std::mutex mutex;
         struct inode_header_t {
             char name[CFS_MAX_FILENAME_LENGTH];
             struct stat attributes;
@@ -129,10 +193,13 @@ public:
         void save_header(inode_header_t);
         std::vector < uint64_t > get_inode_block_pointers(); /// get pointers inside inode (level 1 pointers)
         void save_inode_block_pointers(const std::vector < uint64_t > & block_pointers); /// save pointers to inode (level 1 pointers)
-    public:
-        void unblocked_resize(uint64_t file_length);
         std::vector < uint64_t > get_pointer_by_block(uint64_t data_field_block_id);
         void save_pointer_to_block(uint64_t data_field_block_id, const std::vector < uint64_t > & block_pointers);
+
+    public:
+        void unblocked_resize(uint64_t file_length);
+        std::vector<uint64_t> linearized_level3_pointers();
+        std::vector<uint64_t> linearized_level2_pointers();
 
     public:
         explicit inode_t(filesystem & fs, uint64_t inode_id, uint64_t block_size);

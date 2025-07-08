@@ -135,193 +135,172 @@ void filesystem::inode_t::save_pointer_to_block(const uint64_t data_field_block_
 
 void filesystem::inode_t::unblocked_resize(const uint64_t file_length)
 {
+    auto header = get_header();
+    if (header.attributes.st_size == file_length) return;
+    std::vector < std::unique_ptr<level3> > level3s_;
+    std::vector < std::unique_ptr<level3> > level2s_;
+    std::vector < std::unique_ptr<level3> > level1s_;
+
     const auto abstracted_mapping = pointer_mapping_linear_to_abstracted(
-        file_length,
-        inode_level_pointers,
-        block_max_entries,
-        block_size);
-    auto level1_pointers = get_inode_block_pointers();
-    assert_short(level1_pointers.size() >= abstracted_mapping.inode_level_pointers);
+        file_length, inode_level_pointers, block_max_entries, block_size);
+    const auto actual_level3s = linearized_level3_pointers();
+    const auto actual_level2s = linearized_level2_pointers();
+    auto actual_level1s = get_inode_block_pointers();
+    std::erase_if(actual_level1s, [](const uint64_t p)->bool{ return p == 0; });
+    level3s_.resize(actual_level3s.size());
+    level2s_.resize(actual_level2s.size());
+    level1s_.resize(actual_level1s.size());
 
-    auto mkblk = [&]->uint64_t
+    for (uint64_t i = 0; i < actual_level3s.size(); i++) {
+        level3s_[i] = std::make_unique<level3>(actual_level3s[i], fs, true, block_size);
+    }
+
+    for (uint64_t i = 0; i < actual_level2s.size(); i++) {
+        level2s_[i] = std::make_unique<level3>(actual_level2s[i], fs, true, block_size);
+    }
+
+    for (uint64_t i = 0; i < actual_level1s.size(); i++) {
+        level1s_[i] = std::make_unique<level3>(actual_level1s[i], fs, true, block_size);
+    }
+
+    level3s_.resize(abstracted_mapping.level3_pointers);
+    level2s_.resize(abstracted_mapping.level2_pointers);
+    level1s_.resize(abstracted_mapping.inode_level_pointers);
+
+    for (auto & level3 : level3s_) {
+        if (level3 == nullptr) {
+            level3 = std::make_unique<class level3>(fs, true, block_size);
+        }
+
+        level3->control_active = false;
+    }
+
+    for (auto & level2 : level2s_) {
+        if (level2 == nullptr) {
+            level2 = std::make_unique<level3>(fs, true, block_size);
+        }
+
+        level2->control_active = false;
+    }
+
+    for (auto & level1 : level1s_) {
+        if (level1 == nullptr) {
+            level1 = std::make_unique<level3>(fs, true, block_size);
+        }
+
+        level1->control_active = false;
+    }
+
+    // fill in the data
+    std::vector < std::pair < uint64_t, std::vector<uint64_t> > > level2_literals;
+    std::vector < std::pair < uint64_t, std::vector<uint64_t> > > level1_literals;
+    std::vector < uint64_t > level1_pointers;
+    level1_pointers.reserve(block_max_entries);
+    level2_literals.reserve(abstracted_mapping.level2_pointers);
+    level1_literals.reserve(abstracted_mapping.inode_level_pointers);
+
+    uint64_t level2_pointer = 0;
+    uint64_t level1_pointer = 0;
+
+    std::vector<uint64_t> level3_pointers;
+    std::vector<uint64_t> level2_pointers;
+    level3_pointers.reserve(block_max_entries);
+    level2_pointers.reserve(block_max_entries);
+
+    for (const auto & level3 : level3s_)
     {
-        const auto new_block_id = fs.allocate_new_block();
-        constexpr cfs_blk_attr_t pointer_attributes = {
-            .frozen = 0,
-            .type = POINTER_TYPE,
-            .type_backup = 0,
-            .cow_refresh_count = 0,
-            .links = 1,
-        };
-        fs.set_attr(new_block_id, pointer_attributes);
-        std::vector<uint8_t> block_data_empty;
-        block_data_empty.resize(block_size);
-        std::memset(block_data_empty.data(), 0, block_size);
-        fs.write_block(new_block_id, block_data_empty.data(), block_size, 0);
-        return new_block_id;
-    };
-
-    class chain_level2 {
-    public:
-        std::unique_ptr<chain_level2> next;
-        std::vector < std::pair < bool, std::vector<bool> > > block_pointers;
-
-        explicit chain_level2(const uint64_t limit)
-        {
-            block_pointers.resize(limit);
-            for (auto & level3 : block_pointers | std::views::values) {
-                level3.resize(limit);
-            }
-
-            next = nullptr;
-        }
-
-        void add_block(const uint64_t pointers_for_level2, const uint64_t pointers_for_level3)
-        {
-            const uint64_t this_block_count = pointers_for_level2 > block_pointers.size() ? block_pointers.size() : pointers_for_level2;
-            const uint64_t next_block_count = pointers_for_level2 - this_block_count;
-            uint64_t level3_pointer_allocated_this_level = 0;
-            for (uint64_t i = 0; i < this_block_count; ++i)
-            {
-                if (!block_pointers[i].first)
-                {
-                    block_pointers[i].first = true;
-                    const uint64_t level3_allocation_this_step = std::min(pointers_for_level3 - level3_pointer_allocated_this_level,
-                        block_pointers.size());
-                    for (uint64_t j = 0; j < level3_allocation_this_step; ++j) {
-                        block_pointers[i].second[j] = true;
-                        level3_pointer_allocated_this_level++;
-                    }
-                }
-            }
-
-            if (next_block_count > 0) {
-                next = std::make_unique<chain_level2>(block_pointers.size());
-                next->add_block(next_block_count, pointers_for_level3 - level3_pointer_allocated_this_level);
-            }
-        }
-    };
-
-    chain_level2 chain(block_max_entries);
-    chain.add_block(abstracted_mapping.level2_pointers, abstracted_mapping.level3_pointers);
-
-    // normalize
-    std::function<void(chain_level2 *)> recursive_mapping;
-    std::vector<std::vector<std::vector<bool>>> block_pointers_hierarchy;
-    recursive_mapping = [&](chain_level2 * this_chain)
-    {
-        if (this_chain) {
-            std::vector<std::vector<bool>> level2_and_3;
-            level2_and_3.resize(block_max_entries);
-            for (auto & level3 : level2_and_3) {
-                level3.resize(block_max_entries);
-            }
-
-            for (uint64_t i = 0; i < block_max_entries; ++i) {
-                for (uint64_t j = 0; j < block_max_entries; ++j) {
-                    level2_and_3[i][j] = this_chain->block_pointers[i].second[j];
-                }
-            }
-
-            block_pointers_hierarchy.emplace_back(level2_and_3);
-
-            recursive_mapping(this_chain->next.get());
-        }
-    };
-    recursive_mapping(&chain);
-
-    struct position_t {
-        uint64_t level1_position;
-        uint64_t level2_position;
-        uint64_t level3_position;
-    };
-
-    auto linear_to_segments = [&](const uint64_t linear_position) {
-        const uint64_t level2_position = linear_position / block_max_entries;
-        return (position_t){
-            .level1_position = level2_position / block_max_entries,
-            .level2_position = level2_position % block_max_entries,
-            .level3_position = linear_position % block_max_entries,
-        };
-    };
-
-    auto safe_delete = [&](uint64_t & block_id)
-    {
-        assert_short(block_id != 0);
-        const auto attr = fs.get_attr(block_id);
-        if (attr.frozen) {
-            return;
-        }
-
-        if (attr.links > 1) {
-            fs.delink_block(block_id);
-        } else {
-            fs.deallocate_block(block_id);
-        }
-
-        block_id = 0;
-    };
-
-    uint64_t block_count = 0;
-    for (uint64_t block_offset = 0; block_offset < abstracted_mapping.level3_pointers; ++block_offset) {
-        auto segmentations = linear_to_segments(block_offset);
-        if (block_pointers_hierarchy[segmentations.level1_position][segmentations.level2_position][segmentations.level3_position]) {
-            block_count++;
+        level3_pointers.push_back(level3->data_field_block_id);
+        if (level3_pointers.size() == block_max_entries) {
+            level2_literals.emplace_back(level2s_[level2_pointer++]->data_field_block_id, level3_pointers);
+            level3_pointers.clear();
         }
     }
 
-    auto index_node_pointers = get_inode_block_pointers();
-    assert_short(index_node_pointers.size() >= block_pointers_hierarchy.size());
-    // std::vector<uint64_t> pending_for_deletion;
-    for (uint64_t i = 0; i < index_node_pointers.size(); ++i)
-    {
-        if (i < block_pointers_hierarchy.size())
-        {
-            if (index_node_pointers[i] == 0) index_node_pointers[i] = mkblk();
-            auto pointer_level2 = get_pointer_by_block(index_node_pointers[i]);
-            for (uint64_t j = 0; j < block_max_entries; ++j)
-            {
-                if (!block_pointers_hierarchy[i][j][0]) break;
+    if (!level3_pointers.empty()) {
+        level2_literals.emplace_back(level2s_[level2_pointer++]->data_field_block_id, level3_pointers);
+    }
 
-                if (pointer_level2[j] == 0) pointer_level2[j] = mkblk();
-                auto pointer_level3 = get_pointer_by_block(pointer_level2[j]);
-                for (uint64_t k = 0; k < block_max_entries; ++k) {
-                    if (block_pointers_hierarchy[i][j][k]) {
-                        if (pointer_level3[k] == 0) pointer_level3[k] = mkblk();
-                    } else {
-                        if (pointer_level3[k] != 0) safe_delete(pointer_level3[k]);
-                    }
-                }
-                save_pointer_to_block(pointer_level2[j], pointer_level3);
-            }
-            save_pointer_to_block(index_node_pointers[i], pointer_level2);
+    for (const auto & level2 : level2s_)
+    {
+        level2_pointers.push_back(level2->data_field_block_id);
+        if (level2_pointers.size() == block_max_entries) {
+            level1_pointers.push_back(level1s_[level1_pointer]->data_field_block_id);
+            level1_literals.emplace_back(level1s_[level1_pointer++]->data_field_block_id, level2_pointers);
+            level2_pointers.clear();
         }
-        else if (i > block_pointers_hierarchy.size() && index_node_pointers[i] != 0)
+    }
+
+    if (!level2_pointers.empty()) {
+        level1_pointers.push_back(level1s_[level1_pointer]->data_field_block_id);
+        level1_literals.emplace_back(level1s_[level1_pointer++]->data_field_block_id, level2_pointers);
+    }
+
+    // save level 1 -> level 2
+    level1_pointers.resize(inode_level_pointers);
+    save_inode_block_pointers(level1_pointers);
+    for (auto [block, data] : level1_literals) {
+        data.resize(block_max_entries);
+        save_pointer_to_block(block, data);
+    }
+
+    // save level 2 -> level 3
+    for (auto & [block, data] : level2_literals) {
+        data.resize(block_max_entries);
+        save_pointer_to_block(block, data);
+    }
+
+    header.attributes.st_size = file_length;
+    save_header(header);
+}
+
+std::vector<uint64_t> filesystem::inode_t::linearized_level3_pointers()
+{
+    const auto level1 = get_inode_block_pointers();
+    std::vector<uint64_t> block_pointers;
+    for (const auto & lv1_blk : level1)
+    {
+        if (lv1_blk != 0)
         {
-            for (uint64_t j = 0; j < block_max_entries; ++j)
+            const auto lv2_blks = get_pointer_by_block(lv1_blk);
+            for (const auto & lv2_blk : lv2_blks)
             {
-                auto pointer_level2 = get_pointer_by_block(index_node_pointers[i]);
-                if (pointer_level2[j] != 0)
+                if (lv2_blk != 0)
                 {
-                    for (uint64_t k = 0; k < block_max_entries; ++k)
+                    const auto lv3_blks = get_pointer_by_block(lv2_blk);
+                    for (const auto & lv3_blk : lv3_blks)
                     {
-                        auto pointer_level3 = get_pointer_by_block(pointer_level2[j]);
-                        if (pointer_level3[k] != 0) {
-                            safe_delete(pointer_level3[k]);
+                        if (lv3_blk != 0) {
+                            block_pointers.push_back(lv3_blk);
                         }
                     }
                 }
             }
-
-            safe_delete(index_node_pointers[i]);
-            index_node_pointers[i] = 0;
         }
-        else if (i >= block_pointers_hierarchy.size() && index_node_pointers[i] == 0) {
-            break;
-        }
-
-        save_inode_block_pointers(index_node_pointers);
     }
+
+    return block_pointers;
+}
+
+std::vector<uint64_t> filesystem::inode_t::linearized_level2_pointers()
+{
+    const auto level1 = get_inode_block_pointers();
+    std::vector<uint64_t> block_pointers;
+    for (const auto & lv1_blk : level1)
+    {
+        if (lv1_blk != 0)
+        {
+            const auto lv2_blks = get_pointer_by_block(lv1_blk);
+            for (const auto & lv2_blk : lv2_blks)
+            {
+                if (lv2_blk != 0)
+                {
+                    block_pointers.push_back(lv2_blk);
+                }
+            }
+        }
+    }
+
+    return block_pointers;
 }
 
 void filesystem::inode_t::read(void *buff, uint64_t offset, uint64_t size)

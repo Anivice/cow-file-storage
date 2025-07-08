@@ -220,14 +220,19 @@ void clear_entries(basic_io_t & io, cfs_head_t & head)
     {
         CRC64 hash_empty;
         sector_data_t data{};
+        std::memset(data.data(), 0, data.size());
         for (uint64_t i = start; i < end; ++i)
         {
             if (first_bit_being_1 && i == start) {
                 data[0] = 0x01;
+            } else {
+                data[0] = 0x00;
             }
 
             for (uint64_t j = 0; j < head.static_info.block_over_sector; j++) {
-                // debug_log("Scrubbing sector ", j + i * head.static_info.block_over_sector);
+                if (j != 0) {
+                    data[0] = 0x00;
+                }
                 io.write(data, j + i * head.static_info.block_over_sector);
                 hash_empty.update(data.data(), data.size());
             }

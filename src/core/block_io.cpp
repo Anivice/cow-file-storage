@@ -1,3 +1,4 @@
+#include <sys/sysinfo.h>
 #include "core/block_io.h"
 #include "helper/log.h"
 #include "helper/cpp_assert.h"
@@ -55,7 +56,17 @@ block_io_t::block_io_t(basic_io_t & io, const bool read_only_fs) : io(io)
         cfs_head.runtime_info.mount_timestamp = get_timestamp();
         unblocked_sync_header();
     }
-    max_cached_block_number = 8; // TODO: proper cache size
+
+    struct sysinfo info{};
+    if (sysinfo(&info) != 0) {
+        perror("sysinfo");
+        max_cached_block_number = (512 * 1024 * 1024 / cfs_head.static_info.block_size);
+    } else {
+        max_cached_block_number = static_cast<uint64_t>(static_cast<double>(info.totalram) * 0.10
+            / static_cast<double>(cfs_head.static_info.block_size));
+    }
+
+    debug_log("Cache size: ", max_cached_block_number, " blocks");
 }
 
 block_io_t::~block_io_t()

@@ -82,17 +82,17 @@ if ("X${CMAKE_BUILD_TYPE}" STREQUAL "XDebug")
             -Wl,-z,relro -Wl,-z,now
     )
 
-    list(APPEND compiler_options
-            -fsanitize=address
-            -fsanitize=undefined
-    )
-
-    list(APPEND linker_options
-            -fsanitize=address
-            -fsanitize=undefined
-            -lasan
-            -lubsan
-    )
+#    list(APPEND compiler_options
+#            -fsanitize=address
+#            -fsanitize=undefined
+#    )
+#
+#    list(APPEND linker_options
+#            -fsanitize=address
+#            -fsanitize=undefined
+#            -lasan
+#            -lubsan
+#    )
 
 #    list(APPEND compiler_options
 #            -fsanitize=thread
@@ -150,7 +150,7 @@ set(CMAKE_CXX_STANDARD 23)
 include_directories(src/include)
 add_compile_definitions(CORE_VERSION="0.0.1")
 add_compile_definitions(BACKEND_VERSION="0.0.1")
-add_library(core SHARED
+add_library(core OBJECT
         src/include/helper/cpp_assert.h
         src/include/helper/err_type.h
         src/helper/log.cpp              src/include/helper/log.h
