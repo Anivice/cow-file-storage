@@ -66,7 +66,7 @@ block_io_t::block_io_t(basic_io_t & io, const bool read_only_fs) : io(io)
             / static_cast<double>(cfs_head.static_info.block_size));
     }
 
-    debug_log("Cache size: ", max_cached_block_number, " blocks");
+    // debug_log("Cache size: ", max_cached_block_number, " blocks");
 }
 
 block_io_t::~block_io_t()

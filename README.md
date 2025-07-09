@@ -29,9 +29,9 @@ Different TODOs goes here
  - [x] Block Allocation and Deletion
  - [x] Block Attributes
  - [x] Block Copy-on-Write
- - [ ] Inode
+ - [x] Inode
  - [ ] Filesystem Basic Operations
- - [ ] Filesystem Error Recovery
+ - [ ] Filesystem Integrity Insurance
  - [ ] FUSE Implementation
  - [ ] Robustness Test Results
 

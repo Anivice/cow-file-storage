@@ -20,7 +20,7 @@ std::string get_name_by_id(const uint64_t id)
         case actions::ACTION_TRANSACTION_MODIFY_BLOCK_ATTRIBUTES: return color::color(5,3,1) + "Transaction Modify Block Attributes" + color::no_color();
         case actions::ACTION_TRANSACTION_ABORT_ON_ERROR: return color::color(5,0,0) + "Transaction Abort On Error" + color::no_color();
         case actions::ACTION_TRANSACTION_DONE: return color::color(0,5,0) + "Transaction Done" + color::no_color();
-        case actions::ACTION_TRANSACTION_MODIFY_DATA_FIELD_BLOCK_CONTENT: return color::color(0,5,0) + "Transaction Modify Data Field Block Content" + color::no_color();
+        case actions::ACTION_TRANSACTION_MODIFY_DATA_FIELD_BLOCK_CONTENT: return color::color(2,2,5) + "Transaction Modify Data Field Block Content" + color::no_color();
 
         default: return "";
     }

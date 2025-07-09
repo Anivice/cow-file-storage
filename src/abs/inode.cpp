@@ -24,14 +24,14 @@
 #include "helper/cpp_assert.h"
 #include "helper/log.h"
 
-filesystem::inode_t::inode_header_t filesystem::inode_t::get_header()
+filesystem::inode_t::inode_header_t filesystem::inode_t::unblocked_get_header()
 {
     inode_header_t header{};
     fs.read_block(inode_id, &header, sizeof(header), 0);
     return header;
 }
 
-void filesystem::inode_t::save_header(const inode_header_t header)
+void filesystem::inode_t::unblocked_save_header(const inode_header_t header)
 {
     fs.write_block(inode_id, &header, sizeof(header), 0);
 }
@@ -69,6 +69,21 @@ filesystem::inode_t::inode_t(filesystem & fs, const uint64_t inode_id, const uin
  *                      |           -> [STORAGE BLOCK 2]
  *                      -> [STORAGE BLOCK 1]
  */
+
+filesystem::inode_t::inode_header_t filesystem::inode_t::get_header() {
+    std::lock_guard<std::mutex> guard(mutex);
+    return unblocked_get_header();
+}
+
+void filesystem::inode_t::save_header(const filesystem::inode_t::inode_header_t & header) {
+    std::lock_guard<std::mutex> guard(mutex);
+    unblocked_save_header(header);
+}
+
+void filesystem::inode_t::resize(const uint64_t new_size) {
+    std::lock_guard<std::mutex> guard(mutex);
+    unblocked_resize(new_size);
+}
 
 struct block_mapping_tail_t {
     uint64_t inode_level_pointers; // i.e., level 1 pointers
@@ -116,7 +131,7 @@ block_mapping_tail_t pointer_mapping_linear_to_abstracted(
         .last_level3_pointer_block_has_this_many_pointers = required_blocks % level2_pointers_per_block,
     };
 
-    if (DEBUG) ret.assert();
+    if constexpr (DEBUG) ret.assert();
     return ret;
 }
 
@@ -135,8 +150,8 @@ void filesystem::inode_t::save_pointer_to_block(const uint64_t data_field_block_
 
 void filesystem::inode_t::unblocked_resize(const uint64_t file_length)
 {
-    auto header = get_header();
-    if (header.attributes.st_size == file_length) return;
+    auto header = unblocked_get_header();
+    if (static_cast<uint64_t>(header.attributes.st_size) == file_length) return;
     std::vector < std::unique_ptr<level3> > level3s_;
     std::vector < std::unique_ptr<level3> > level2s_;
     std::vector < std::unique_ptr<level3> > level1s_;
@@ -249,8 +264,46 @@ void filesystem::inode_t::unblocked_resize(const uint64_t file_length)
         save_pointer_to_block(block, data);
     }
 
-    header.attributes.st_size = file_length;
-    save_header(header);
+    header.attributes.st_size = static_cast<long>(file_length);
+    header.attributes.st_ctim = get_current_time();
+    unblocked_save_header(header);
+}
+
+void filesystem::inode_t::redirect_3rd_level_block(const uint64_t old_data_field_block_id, const uint64_t new_data_field_block_id)
+{
+    const auto level1 = get_inode_block_pointers();
+    std::vector<uint64_t> block_pointers;
+    for (const auto & lv1_blk : level1)
+    {
+        if (lv1_blk != 0)
+        {
+            const auto lv2_blks = get_pointer_by_block(lv1_blk);
+            for (const auto & lv2_blk : lv2_blks)
+            {
+                if (lv2_blk != 0)
+                {
+                    bool found = false;
+                    auto lv3_blks = get_pointer_by_block(lv2_blk);
+                    for (auto & lv3_blk : lv3_blks)
+                    {
+                        if (lv3_blk != 0 && lv3_blk == old_data_field_block_id) {
+                            lv3_blk = new_data_field_block_id;
+                            found = true;
+                            break;
+                        }
+                    }
+
+                    if (found) {
+                        save_pointer_to_block(lv2_blk, lv3_blks);
+                        return;
+                    }
+                }
+            }
+        }
+    }
+
+    debug_log("ERROR: Redirect block pointer from ", old_data_field_block_id, " to ", new_data_field_block_id,
+        " failed: No such block pointer in third level pointer map.");
 }
 
 std::vector<uint64_t> filesystem::inode_t::linearized_level3_pointers()
@@ -303,22 +356,231 @@ std::vector<uint64_t> filesystem::inode_t::linearized_level2_pointers()
     return block_pointers;
 }
 
-void filesystem::inode_t::read(void *buff, uint64_t offset, uint64_t size)
+uint64_t filesystem::inode_t::read(void *buff, uint64_t size, const uint64_t offset)
 {
     std::lock_guard<std::mutex> guard(mutex);
+    auto header = unblocked_get_header();
+    if (offset > static_cast<uint64_t>(header.attributes.st_size)) {
+        return 0;
+    }
+
+    if ((offset + size) > static_cast<uint64_t>(header.attributes.st_size)) {
+        size = header.attributes.st_size - offset;
+    }
+
+    header.attributes.st_atim = get_current_time();
+    unblocked_save_header(header);
+
+    const auto level3_blocks = linearized_level3_pointers();
+
+    const uint64_t first_blk_position = offset / block_size;
+    const uint64_t first_blk_offset = offset % block_size;
+    uint64_t first_blk_read_size = block_size - first_blk_offset;
+    if (first_blk_read_size > size) first_blk_read_size = size;
+    const uint64_t continuous_blks = (size - first_blk_read_size) / block_size;
+    const uint64_t last_blk_position = first_blk_position + continuous_blks + 1;
+    const uint64_t last_blk_read_size = (size - first_blk_read_size) % block_size;
+
+    uint64_t g_wr_off = 0;
+    // 1. read first block
+    fs.read_block(level3_blocks[first_blk_position], buff, first_blk_read_size, first_blk_offset);
+    g_wr_off += first_blk_read_size;
+
+    // 2. read continuous blocks
+    for (uint64_t i = 0; i < continuous_blks; i++) {
+        const uint64_t blk_position = first_blk_position + 1 + i;
+        fs.read_block(level3_blocks[blk_position], static_cast<uint8_t *>(buff) + g_wr_off, block_size, 0);
+        g_wr_off += block_size;
+    }
+
+    if (last_blk_read_size) {
+        fs.read_block(level3_blocks[last_blk_position], static_cast<uint8_t *>(buff) + g_wr_off, last_blk_read_size, 0);
+        g_wr_off += last_blk_read_size;
+    }
+    assert_short(g_wr_off == size);
+    return g_wr_off;
 }
 
-void filesystem::inode_t::write(const void * buff, uint64_t offset, uint64_t size)
+uint64_t filesystem::inode_t::write(const void * buff, uint64_t size, const uint64_t offset)
 {
     std::lock_guard<std::mutex> guard(mutex);
+    auto header = unblocked_get_header();
+    if (offset > static_cast<uint64_t>(header.attributes.st_size)) {
+        return 0;
+    }
+
+    if (offset + size > static_cast<uint64_t>(header.attributes.st_size)) {
+        size = header.attributes.st_size - offset;
+    }
+
+    header.attributes.st_mtim = get_current_time();
+    header.attributes.st_atim = header.attributes.st_mtim;
+    unblocked_save_header(header);
+
+    const auto level3_blocks = linearized_level3_pointers();
+
+    const uint64_t first_blk_position = offset / block_size;
+    const uint64_t first_blk_offset = offset % block_size;
+    uint64_t first_blk_write_size = block_size - first_blk_offset;
+    if (first_blk_write_size > size) first_blk_write_size = size;
+    const uint64_t continuous_blks = (size - first_blk_write_size) / block_size;
+    const uint64_t last_blk_position = first_blk_position + continuous_blks + 1;
+    const uint64_t last_blk_write_size = (size - first_blk_write_size) % block_size;
+
+    auto block_redirect = [&](const uint64_t block_id)->uint64_t
+    {
+        auto attr = fs.get_attr(block_id);
+        uint64_t target_first_block = block_id;
+        if (attr.frozen)
+        {
+            // copy attributes
+            target_first_block = fs.allocate_new_block();
+            attr.frozen = 0;
+            attr.links = 0;
+            attr.cow_refresh_count = 0;
+            fs.set_attr(target_first_block, attr);
+
+            // copy block data
+            std::vector<uint8_t> data;
+            data.resize(block_size);
+            fs.read_block(block_id, data.data(), block_size, 0);
+            fs.write_block(target_first_block, data.data(), block_size, 0);
+
+            // redirect block
+            redirect_3rd_level_block(block_id, target_first_block);
+        }
+
+        return target_first_block;
+    };
+
+    uint64_t g_wr_off = 0;
+    // 1. write first block
+    const uint64_t target_first_block = block_redirect(level3_blocks[first_blk_position]);
+    fs.write_block(target_first_block, buff, first_blk_write_size, first_blk_offset);
+    g_wr_off += first_blk_write_size;
+
+    // 2. write continuous blocks
+    for (uint64_t i = 0; i < continuous_blks; i++) {
+        const uint64_t blk_position = block_redirect(level3_blocks[first_blk_position + 1 + i]);
+        fs.write_block(blk_position, static_cast<const uint8_t *>(buff) + g_wr_off, block_size, 0);
+        g_wr_off += block_size;
+    }
+
+    if (last_blk_write_size) {
+        fs.write_block(block_redirect(level3_blocks[last_blk_position]), static_cast<const uint8_t *>(buff) + g_wr_off, last_blk_write_size, 0);
+        g_wr_off += last_blk_write_size;
+    }
+
+    assert_short(g_wr_off == size);
+    return g_wr_off;
 }
 
-void filesystem::inode_t::rename(const char * new_name)
+void filesystem::inode_t::level3::safe_delete(uint64_t & block_id)
 {
-    std::lock_guard<std::mutex> guard(mutex);
+    assert_short(block_id != 0);
+    const auto attr = fs.get_attr(block_id);
+    if (attr.frozen) {
+        return;
+    }
+
+    if (attr.links > 1) {
+        fs.delink_block(block_id);
+    } else {
+        fs.deallocate_block(block_id);
+    }
+
+    block_id = 0;
 }
 
-void filesystem::inode_t::remove()
+uint64_t filesystem::inode_t::level3::mkblk()
 {
-    std::lock_guard<std::mutex> guard(mutex);
+    const auto new_block_id = fs.allocate_new_block();
+    constexpr cfs_blk_attr_t pointer_attributes = {
+        .frozen = 0,
+        .type = POINTER_TYPE,
+        .type_backup = 0,
+        .cow_refresh_count = 0,
+        .links = 1,
+    };
+    fs.set_attr(new_block_id, pointer_attributes);
+    std::vector<uint8_t> block_data_empty;
+    block_data_empty.resize(block_size);
+    std::memset(block_data_empty.data(), 0, block_size);
+    fs.write_block(new_block_id, block_data_empty.data(), block_size, 0);
+    return new_block_id;
+}
+
+std::map < std::string, uint64_t > filesystem::directory_t::list_dentries()
+{
+    static_assert(sizeof(dentry_t) == CFS_MAX_FILENAME_LENGTH + sizeof(uint64_t));
+    const auto header = get_header();
+    const uint64_t dentry_count = header.attributes.st_size / sizeof(dentry_t);
+    std::map < std::string, uint64_t > ret;
+    for (uint64_t i = 0; i < dentry_count; i++) {
+        dentry_t dentry{};
+        inode_t::read(&dentry, sizeof(dentry), i * sizeof(dentry));
+        ret.emplace(dentry.name, dentry.inode_id);
+    }
+
+    return ret;
+}
+
+void filesystem::directory_t::save_dentries(const std::map < std::string, uint64_t > & dentries)
+{
+    resize(dentries.size() * sizeof(dentry_t));
+    uint64_t offset = 0;
+    for (const auto & [name, inode] : dentries) {
+        dentry_t dentry{};
+        std::strncpy(dentry.name, name.c_str(), sizeof(dentry.name) - 1);
+        dentry.inode_id = inode;
+        offset += inode_t::write(&dentry, sizeof(dentry), offset);
+    }
+}
+
+filesystem::inode_t filesystem::directory_t::get_inode(const std::string & name)
+{
+    try {
+        return inode_t{fs, list_dentries()[name], fs.block_manager->block_size};
+    } catch (const std::out_of_range &) {
+        throw fs_error::no_such_file_or_directory("");
+    }
+}
+
+filesystem::inode_t filesystem::directory_t::create_dentry(const std::string & name, const mode_t mode)
+{
+    dentry_t dentry{};
+    std::strncpy(dentry.name, name.c_str(), CFS_MAX_FILENAME_LENGTH - 1);
+    dentry.inode_id = fs.allocate_new_block();
+
+    // create new attribute
+    constexpr cfs_blk_attr_t attr = {
+        .frozen = 0,
+        .type = INDEX_TYPE,
+        .type_backup = 0,
+        .cow_refresh_count = 0,
+        .links = 1,
+    };
+    fs.set_attr(dentry.inode_id, attr);
+
+    // clear inode area
+    std::vector<uint8_t> data;
+    data.resize(fs.block_manager->block_size);
+    std::memset(data.data(), 0, fs.block_manager->block_size);
+    fs.write_block(dentry.inode_id, data.data(), fs.block_manager->block_size, 0);
+
+    // create a new inode header
+    inode_header_t inode_header {};
+    std::strncpy(inode_header.name, name.c_str(), CFS_MAX_FILENAME_LENGTH - 1);
+    inode_header.attributes.st_atim = inode_header.attributes.st_ctim = inode_header.attributes.st_mtim = get_current_time();
+    inode_header.attributes.st_blksize = static_cast<long>(fs.block_manager->block_size);
+    inode_header.attributes.st_nlink = 1;
+    inode_header.attributes.st_mode = mode;
+    save_header(inode_header);
+
+    // add new dentry to dentry list
+    auto dir = list_dentries();
+    dir.emplace(dentry.name, dentry.inode_id);
+    save_dentries(dir);
+
+    return inode_t{fs, dentry.inode_id, fs.block_manager->block_size};
 }

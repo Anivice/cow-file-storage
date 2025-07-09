@@ -21,6 +21,7 @@
 #ifndef SERVICE_H
 #define SERVICE_H
 
+#include <filesystem>
 #include <memory>
 #include <sys/stat.h>
 #include "core/blk_manager.h"
@@ -64,6 +65,7 @@ namespace fs_error {
     MAKE_ERROR_TYPE(filesystem_block_manager_init_error);
     MAKE_ERROR_TYPE(filesystem_space_depleted);
     MAKE_ERROR_TYPE(filesystem_frozen_block_protection);
+    MAKE_ERROR_TYPE(no_such_file_or_directory);
     MAKE_ERROR_TYPE(unknown_error);
 }
 
@@ -112,16 +114,27 @@ class filesystem
     void revert_transaction();
     void delink_block(uint64_t data_field_block_id);
 
-public:
     class inode_t
     {
+    protected:
         filesystem & fs;
+
+    private:
         const uint64_t inode_id; // data block id for inode
         const uint64_t block_size;
         const uint64_t inode_level_pointers;
         const uint64_t block_max_entries;
         std::vector<uint64_t> block_pointers;
 
+    protected:
+        static timespec get_current_time()
+        {
+            timespec ts{};
+            timespec_get(&ts, TIME_UTC);
+            return ts;
+        }
+
+    private:
         class level3 {
         public:
             filesystem & fs;
@@ -130,40 +143,8 @@ public:
             const uint64_t block_size;
             bool newly_created = false;
 
-            void safe_delete(uint64_t & block_id)
-            {
-                assert_short(block_id != 0);
-                const auto attr = fs.get_attr(block_id);
-                if (attr.frozen) {
-                    return;
-                }
-
-                if (attr.links > 1) {
-                    fs.delink_block(block_id);
-                } else {
-                    fs.deallocate_block(block_id);
-                }
-
-                block_id = 0;
-            }
-
-            uint64_t mkblk()
-            {
-                const auto new_block_id = fs.allocate_new_block();
-                constexpr cfs_blk_attr_t pointer_attributes = {
-                    .frozen = 0,
-                    .type = POINTER_TYPE,
-                    .type_backup = 0,
-                    .cow_refresh_count = 0,
-                    .links = 1,
-                };
-                fs.set_attr(new_block_id, pointer_attributes);
-                std::vector<uint8_t> block_data_empty;
-                block_data_empty.resize(block_size);
-                std::memset(block_data_empty.data(), 0, block_size);
-                fs.write_block(new_block_id, block_data_empty.data(), block_size, 0);
-                return new_block_id;
-            }
+            void safe_delete(uint64_t & block_id);
+            uint64_t mkblk();
 
             explicit level3(const uint64_t data_field_block_id, filesystem & fs, const bool control_active, const uint64_t block_size)
                 : fs(fs), data_field_block_id(data_field_block_id), control_active(control_active), block_size(block_size) { }
@@ -184,34 +165,60 @@ public:
         };
 
         std::mutex mutex;
+
+    protected:
         struct inode_header_t {
             char name[CFS_MAX_FILENAME_LENGTH];
             struct stat attributes;
         };
 
-        inode_header_t get_header();
-        void save_header(inode_header_t);
+    private:
+        inode_header_t unblocked_get_header();
+        void unblocked_save_header(inode_header_t);
         std::vector < uint64_t > get_inode_block_pointers(); /// get pointers inside inode (level 1 pointers)
         void save_inode_block_pointers(const std::vector < uint64_t > & block_pointers); /// save pointers to inode (level 1 pointers)
         std::vector < uint64_t > get_pointer_by_block(uint64_t data_field_block_id);
         void save_pointer_to_block(uint64_t data_field_block_id, const std::vector < uint64_t > & block_pointers);
 
-    public:
         void unblocked_resize(uint64_t file_length);
+        void redirect_3rd_level_block(uint64_t old_data_field_block_id, uint64_t new_data_field_block_id);
         std::vector<uint64_t> linearized_level3_pointers();
         std::vector<uint64_t> linearized_level2_pointers();
 
     public:
         explicit inode_t(filesystem & fs, uint64_t inode_id, uint64_t block_size);
-        void read(void *buff, uint64_t offset, uint64_t size);
-        void write(const void * buff, uint64_t offset, uint64_t size);
-        void rename(const char * new_name);
-        void remove(); // remove current inode, works for empty dir and other file types
+        uint64_t read(void *buff, uint64_t size, uint64_t offset);
+        uint64_t write(const void * buff, uint64_t size, uint64_t offset);
+        inode_header_t get_header();
+        void save_header(const inode_header_t & header);
+        void resize(uint64_t new_size);
     };
 
 public:
+    class file_t : public inode_t {
+    public:
+        explicit file_t(filesystem & fs, const uint64_t inode_id, const uint64_t block_size) : inode_t(fs, inode_id, block_size) { }
+    };
 
-    inode_t get_inode_by_path(const std::string & path);
+    class directory_t : private inode_t {
+    private:
+        struct dentry_t {
+            char name[CFS_MAX_FILENAME_LENGTH];
+            uint64_t inode_id;
+        };
+
+    public:
+        explicit directory_t(filesystem & fs, const uint64_t inode_id, const uint64_t block_size) : inode_t(fs, inode_id, block_size) { }
+        std::map < std::string, uint64_t > list_dentries();
+        void save_dentries(const std::map < std::string, uint64_t > & dentries);
+        inode_t create_dentry(const std::string & name, const mode_t mode);
+        inode_t get_inode(const std::string & name);
+    };
+
+    directory_t get_root() {
+        return directory_t{*this, 0, block_manager->block_size};
+    }
+
     explicit filesystem(const char * location);
     ~filesystem();
 };

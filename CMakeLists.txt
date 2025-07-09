@@ -147,6 +147,16 @@ else ()
 endif ()
 
 set(CMAKE_CXX_STANDARD 23)
+
+# Add libfuse
+#include(FindPkgConfig)
+#find_package(PkgConfig REQUIRED)
+#pkg_check_modules(LIBFUSE REQUIRED fuse)
+#add_compile_definitions("_FILE_OFFSET_BITS=64")
+#include_directories(${LIBFUSE_INCLUDE_DIRS})
+#add_compile_options(${LIBFUSE_CFLAGS_OTHER})
+#link_libraries(${LIBFUSE_LIBRARIES})
+
 include_directories(src/include)
 add_compile_definitions(CORE_VERSION="0.0.1")
 add_compile_definitions(BACKEND_VERSION="0.0.1")
@@ -160,7 +170,6 @@ add_library(core OBJECT
         src/helper/get_env.cpp          src/include/helper/get_env.h
         src/helper/arg_parser.cpp       src/include/helper/arg_parser.h
         src/helper/lz4.c                src/include/helper/lz4.h
-        src/abs/inode.cpp
         src/core/crc64sum.cpp           src/include/core/crc64sum.h
         src/core/basic_io.cpp           src/include/core/basic_io.h
         src/core/cfs.cpp                src/include/core/cfs.h
@@ -170,8 +179,9 @@ add_library(core OBJECT
         src/core/blk_manager.cpp        src/include/core/blk_manager.h
         src/core/journal.cpp            src/include/core/journal.h
         src/core/block_attr.cpp         src/include/core/block_attr.h
-        src/abs/service.cpp
-        src/include/service.h
+        src/abs/service.cpp             src/include/service.h
+        src/abs/inode.cpp
+        src/ops/operations.cpp          src/include/operations.h
 )
 
 if ("X${CMAKE_BUILD_TYPE}" STREQUAL "XDebug")
@@ -186,8 +196,12 @@ if ("X${CMAKE_BUILD_TYPE}" STREQUAL "XDebug")
     )
 endif ()
 
-add_executable(cfs src/utils/cfs.cpp src/utils/mkfs.cpp src/utils/fsck.cpp src/utils/mount.cpp
-        src/utils/journal_hd.cpp src/utils/journal_hd.h)
+add_executable(cfs src/utils/cfs.cpp
+        src/utils/mkfs.cpp
+        src/utils/fsck.cpp
+        src/utils/mount.cpp
+        src/utils/journal_hd.cpp src/utils/journal_hd.h
+        src/include/operations.h)
 target_link_libraries(cfs PRIVATE core)
 add_custom_target(utils ALL
         COMMAND ${CMAKE_COMMAND} -E create_symlink cfs mount.cfs
@@ -199,3 +213,6 @@ add_custom_target(utils ALL
 
 add_executable(pro src/main.cpp)
 target_link_libraries(pro PRIVATE core)
+
+#find_package(PkgConfig REQUIRED)
+#pkg_check_modules(FUSE3 REQUIRED IMPORTED_TARGET fuse3)
