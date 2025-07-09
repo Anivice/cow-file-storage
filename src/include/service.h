@@ -113,7 +113,6 @@ class filesystem
 
     cfs_blk_attr_t get_attr(uint64_t data_field_block_id);
     void set_attr(uint64_t data_field_block_id, cfs_blk_attr_t attr);
-public:
     void freeze_block();
     void clear_frozen_all();
     void revert_transaction();
@@ -137,6 +136,8 @@ public:
             return ts;
         }
 
+        [[nodiscard]] cfs_blk_attr_t get_inode_blk_attr() const { return fs.get_attr(inode_id); }
+
     private:
         class level3 {
         public:
@@ -147,15 +148,18 @@ public:
             bool newly_created = false;
 
             void safe_delete(uint64_t & block_id);
-            uint64_t mkblk();
+            uint64_t mkblk(const bool storage = false);
 
-            explicit level3(const uint64_t data_field_block_id, filesystem & fs, const bool control_active, const uint64_t block_size)
+            explicit level3(const uint64_t data_field_block_id,
+                filesystem & fs,
+                const bool control_active,
+                const uint64_t block_size, const bool storage = false)
                 : fs(fs), data_field_block_id(data_field_block_id), control_active(control_active), block_size(block_size)
             {
                 if (control_active && fs.get_attr(data_field_block_id).frozen)
                 {
                     // auto create new pointer
-                    const auto new_ptr_id = mkblk();
+                    const auto new_ptr_id = mkblk(storage);
                     std::vector<uint8_t> ptr_data;
                     ptr_data.resize(block_size);
                     fs.read_block(data_field_block_id, ptr_data.data(), block_size, 0);
@@ -164,11 +168,11 @@ public:
                 }
             }
 
-            explicit level3(filesystem & fs, const bool control_active, const uint64_t block_size)
+            explicit level3(filesystem & fs, const bool control_active, const uint64_t block_size, const bool storage = false)
                 : fs(fs), control_active(control_active), block_size(block_size)
             {
                 if (control_active) {
-                    data_field_block_id = mkblk();
+                    data_field_block_id = mkblk(storage);
                 }
             }
 
@@ -194,15 +198,12 @@ public:
         void save_inode_block_pointers(const std::vector < uint64_t > & block_pointers); /// save pointers to inode (level 1 pointers)
         std::vector < uint64_t > get_pointer_by_block(uint64_t data_field_block_id);
         void save_pointer_to_block(uint64_t data_field_block_id, const std::vector < uint64_t > & block_pointers);
-
         void unblocked_resize(uint64_t file_length);
+        void redirect_3rd_level_block(uint64_t old_data_field_block_id, uint64_t new_data_field_block_id);
 
     public:
-        void redirect_3rd_level_block(uint64_t old_data_field_block_id, uint64_t new_data_field_block_id);
         std::vector<uint64_t> linearized_level3_pointers();
         std::vector<uint64_t> linearized_level2_pointers();
-
-    public:
         explicit inode_t(filesystem & fs, uint64_t inode_id, uint64_t block_size);
         uint64_t read(void *buff, uint64_t size, uint64_t offset);
         uint64_t write(const void * buff, uint64_t size, uint64_t offset);
@@ -265,6 +266,11 @@ public:
     uint64_t free_space() {
         std::lock_guard lock(mutex);
         return block_manager->free_blocks() * block_manager->block_size;
+    }
+
+    void release_all_frozen_blocks() {
+        std::lock_guard lock(mutex);
+        clear_frozen_all();
     }
 
     explicit filesystem(const char * location);

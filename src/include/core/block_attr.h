@@ -3,10 +3,10 @@
 
 #include "core/block_io.h"
 
-#define INDEX_TYPE          (1)
-#define POINTER_TYPE        (2)
-#define STORAGE_TYPE        (3)
-#define COW_REDUNDANCY_TYPE (0)
+#define INDEX_TYPE          static_cast<uint16_t>(1)
+#define POINTER_TYPE        static_cast<uint16_t>(2)
+#define STORAGE_TYPE        static_cast<uint16_t>(3)
+#define COW_REDUNDANCY_TYPE static_cast<uint16_t>(0)
 
 struct cfs_blk_attr_t
 {

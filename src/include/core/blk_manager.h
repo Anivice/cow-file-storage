@@ -26,8 +26,11 @@ private:
     std::unique_ptr < bitmap > block_bitmap_mirror; /// bitmap mirror
     std::unique_ptr < block_attr_t > block_attr;    /// block attributes
     std::mutex mutex;           /// operation mutex
+
+public:
     cfs_head_t get_header();    /// read header from disk
 
+private:
     /// update provided header with freshly calculated bitmap hash
     /// @param cfs_head header
     void update_bitmap_hash(cfs_head_t & cfs_head);

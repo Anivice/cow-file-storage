@@ -42,10 +42,6 @@ void block_io_t::unblocked_sync_header()
 
     start.not_in_use();
     end.not_in_use();
-    // sector_data_t header_sector;
-    // std::memcpy(header_sector.data(), &cfs_head, sizeof(cfs_head_t));
-    // io.write(header_sector, 0);
-    // io.write(header_sector, cfs_head.static_info.sectors - 1);
 }
 
 block_io_t::block_io_t(basic_io_t & io, const bool read_only_fs) : io(io)

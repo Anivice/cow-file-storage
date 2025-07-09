@@ -201,7 +201,7 @@ void filesystem::inode_t::unblocked_resize(const uint64_t file_length)
     level1s_.resize(actual_level1s.size());
 
     for (uint64_t i = 0; i < actual_level3s.size(); i++) {
-        level3s_[i] = std::make_unique<level3>(actual_level3s[i], fs, true, block_size);
+        level3s_[i] = std::make_unique<level3>(actual_level3s[i], fs, true, block_size, true);
     }
 
     for (uint64_t i = 0; i < actual_level2s.size(); i++) {
@@ -218,7 +218,7 @@ void filesystem::inode_t::unblocked_resize(const uint64_t file_length)
 
     for (auto & level3 : level3s_) {
         if (level3 == nullptr) {
-            level3 = std::make_unique<class level3>(fs, true, block_size);
+            level3 = std::make_unique<class level3>(fs, true, block_size, true);
         }
 
         level3->control_active = false;
@@ -576,12 +576,12 @@ void filesystem::inode_t::level3::safe_delete(uint64_t & block_id)
     block_id = 0;
 }
 
-uint64_t filesystem::inode_t::level3::mkblk()
+uint64_t filesystem::inode_t::level3::mkblk(const bool storage)
 {
     const auto new_block_id = fs.allocate_new_block();
-    constexpr cfs_blk_attr_t pointer_attributes = {
+    const cfs_blk_attr_t pointer_attributes = {
         .frozen = 0,
-        .type = POINTER_TYPE,
+        .type = (storage ? STORAGE_TYPE : POINTER_TYPE),
         .type_backup = 0,
         .cow_refresh_count = 0,
         .links = 1,
@@ -627,7 +627,7 @@ uint64_t filesystem::directory_t::get_inode(const std::string & name)
     {
         auto child = list_dentries().at(name);
         auto child_attr = fs.get_attr(child);
-        const auto my_attr = fs.get_attr(get_header().attributes.st_ino);
+        const auto my_attr = get_inode_blk_attr();
         if (child_attr.frozen && !my_attr.frozen && child_attr.frozen != 2)
         {
             // copy data
@@ -642,6 +642,17 @@ uint64_t filesystem::directory_t::get_inode(const std::string & name)
             // copy attribute
             child_attr.frozen = 0;
             fs.set_attr(new_inode, child_attr);
+
+            // increase link count for all blocks associated with the old inode
+            auto old_inode = fs.make_inode<inode_t>(child);
+            std::vector<uint64_t> blocks = old_inode.linearized_level2_pointers();
+            blocks.insert_range(blocks.end(), old_inode.linearized_level3_pointers());
+
+            for (const auto & block : blocks) {
+                auto attr = fs.block_manager->get_attr(block);
+                if (attr.links < 127) attr.links++;
+                fs.block_manager->set_attr(block, attr);
+            }
 
             debug_log("Inode duplicated due to frozen inode, inode ", child, ", new inode ", new_inode, ", parent ", get_header().attributes.st_ino);
             child = new_inode;
@@ -683,6 +694,12 @@ void filesystem::directory_t::snapshot(const std::string & name)
     auto new_snapshot_vol_attr = fs.get_attr(new_snapshot_vol.get_header().attributes.st_ino);
     new_snapshot_vol_attr.frozen = 2;
     fs.set_attr(new_snapshot_vol.get_header().attributes.st_ino, new_snapshot_vol_attr);
+
+    // update filesystem header
+    auto fs_header = fs.block_manager->get_header();
+    fs_header.runtime_info.snapshot_number++;
+    fs_header.runtime_info.snapshot_number_dup = fs_header.runtime_info.snapshot_number_dup2 = fs_header.runtime_info.snapshot_number_dup3;
+    fs.block_io->update_runtime_info(fs_header);
 
     // freeze
     fs.freeze_block();

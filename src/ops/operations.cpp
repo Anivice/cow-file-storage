@@ -269,11 +269,23 @@ int do_rmdir (const char * path)
         const auto target = path_vec.back();
         path_vec.pop_back();
         auto inode = get_inode_by_path<filesystem::directory_t>(path_vec);
-        if (inode.get_header().attributes.st_size != 0) {
-            return ENOTEMPTY;
+        if (inode.get_inode_blk_attr().frozen == 2)
+        {
+            debug_log("Remove ALL snapshots");
+            filesystem_instance->release_all_frozen_blocks();
+            return 0;
         }
-        inode.unlink_inode(target);
-        return 0;
+        else if (inode.get_inode_blk_attr().frozen == 1) {
+            return -EROFS;
+        }
+        else
+        {
+            if (inode.get_header().attributes.st_size != 0) {
+                return -ENOTEMPTY;
+            }
+            inode.unlink_inode(target);
+            return 0;
+        }
     }
     CATCH_TAIL
 }
