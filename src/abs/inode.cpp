@@ -392,6 +392,11 @@ uint64_t filesystem::inode_t::read(void *buff, uint64_t size, const uint64_t off
 {
     std::lock_guard<std::mutex> guard(mutex);
     auto header = unblocked_get_header();
+
+    if (header.attributes.st_size == 0) {
+        return 0;
+    }
+
     if (offset > static_cast<uint64_t>(header.attributes.st_size)) {
         return 0;
     }
@@ -437,6 +442,11 @@ uint64_t filesystem::inode_t::write(const void * buff, uint64_t size, const uint
 {
     std::lock_guard<std::mutex> guard(mutex);
     auto header = unblocked_get_header();
+
+    if (header.attributes.st_size == 0) {
+        return 0;
+    }
+
     if (offset > static_cast<uint64_t>(header.attributes.st_size)) {
         return 0;
     }
@@ -572,7 +582,7 @@ void filesystem::directory_t::save_dentries(const std::map < std::string, uint64
 uint64_t filesystem::directory_t::get_inode(const std::string & name)
 {
     try {
-        return list_dentries()[name];
+        return list_dentries().at(name);
     } catch (const std::out_of_range &) {
         throw fs_error::no_such_file_or_directory("");
     }
@@ -610,9 +620,9 @@ filesystem::inode_t filesystem::directory_t::create_dentry(const std::string & n
     std::memset(data.data(), 0, fs.block_manager->block_size);
     fs.write_block(dentry.inode_id, data.data(), fs.block_manager->block_size, 0);
 
+    auto new_inode = fs.make_inode<inode_t>(dentry.inode_id);
     // create a new inode header
     inode_header_t inode_header {};
-    std::strncpy(inode_header.name, name.c_str(), CFS_MAX_FILENAME_LENGTH - 1);
     inode_header.attributes.st_atim = inode_header.attributes.st_ctim = inode_header.attributes.st_mtim = get_current_time();
     inode_header.attributes.st_blksize = static_cast<long>(fs.block_manager->block_size);
     inode_header.attributes.st_nlink = 1;
@@ -620,12 +630,11 @@ filesystem::inode_t filesystem::directory_t::create_dentry(const std::string & n
     inode_header.attributes.st_gid = getgid();
     inode_header.attributes.st_uid = getuid();
     inode_header.attributes.st_ino = dentry.inode_id;
-    save_header(inode_header);
+    new_inode.save_header(inode_header);
 
     // add new dentry to dentry list
     auto dir = list_dentries();
     dir.emplace(dentry.name, dentry.inode_id);
     save_dentries(dir);
-
     return inode_t{fs, dentry.inode_id, fs.block_manager->block_size};
 }

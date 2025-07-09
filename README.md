@@ -30,7 +30,8 @@ Different TODOs goes here
  - [x] Block Attributes
  - [x] Block Copy-on-Write
  - [x] Inode
- - [ ] Filesystem Basic Operations
+ - [x] Filesystem Basic Operations
+ - [ ] Filesystem Snapshot Operations
  - [ ] Filesystem Integrity Insurance
  - [ ] FUSE Implementation
  - [ ] Robustness Test Results

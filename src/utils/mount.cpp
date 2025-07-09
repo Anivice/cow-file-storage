@@ -24,12 +24,14 @@
 #include "helper/arg_parser.h"
 #include "helper/color.h"
 #include "helper/get_env.h"
+#include "operations.h"
 
 namespace mount {
     const arg_parser::parameter_vector Arguments = {
         { .name = "help",       .short_name = 'h', .arg_required = false,   .description = "Prints this help message" },
         { .name = "version",    .short_name = 'v', .arg_required = false,   .description = "Prints version" },
         { .name = "verbose",    .short_name = 'V', .arg_required = false,   .description = "Enable verbose output" },
+        { .name = "fuse",       .short_name = 'f', .arg_required = true,    .description = "Arguments passed to fuse" },
     };
 
     void print_help(const std::string & program_name)

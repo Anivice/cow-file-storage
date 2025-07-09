@@ -141,6 +141,10 @@ int do_create (const char * path, const mode_t mode)
         const auto target = path_vec.back();
         path_vec.pop_back();
         auto inode = get_inode_by_path<filesystem::directory_t>(path_vec);
+        try {
+            inode.get_inode(target);
+            return -EEXIST;
+        } catch (...) {}
         inode.create_dentry(target, mode);
         return 0;
     }
@@ -187,7 +191,7 @@ int do_open (const char * path)
     try {
         std::lock_guard lock(operations_mutex);
         auto inode = get_inode_by_path<filesystem::inode_t>(splitString(path));
-        if (const auto [name, attributes] = inode.get_header();
+        if (const auto [attributes] = inode.get_header();
             attributes.st_mode & S_IFDIR)
         {
             return -EISDIR;
@@ -213,7 +217,7 @@ int do_write (const char * path, const char * buffer, const size_t size, const o
     try {
         std::lock_guard lock(operations_mutex);
         auto inode = get_inode_by_path<filesystem::inode_t>(splitString(path));
-        if (const auto [name, attributes] = inode.get_header();
+        if (const auto [attributes] = inode.get_header();
             static_cast<uint64_t>(attributes.st_size) < (offset + size))
         {
             inode.resize(size + offset);
@@ -317,7 +321,7 @@ int do_truncate (const char * path, const off_t size)
     CATCH_TAIL
 }
 
-int do_symlink  (const char * path, const char * target)
+int do_symlink (const char * path, const char * target)
 {
     try {
         std::lock_guard lock(operations_mutex);
@@ -336,20 +340,29 @@ int do_rename (const char * path, const char * name)
 {
     try {
         std::lock_guard lock(operations_mutex);
-        auto path_vec = splitString(path);
-        const auto target = path_vec.back();
-        path_vec.pop_back();
-        auto dir = get_inode_by_path<filesystem::directory_t>(path_vec);
-        const auto inode_id_for_renaming = dir.get_inode(target);
-        auto inode_for_renaming = filesystem_instance->make_inode<filesystem::inode_t>(inode_id_for_renaming);
-        auto header = inode_for_renaming.get_header();
-        std::strncpy(header.name, name, CFS_MAX_FILENAME_LENGTH - 1);
-        header.attributes.st_ctim = header.attributes.st_atim = filesystem::inode_t::get_current_time();
-        inode_for_renaming.save_header(header);
-        auto dentries = dir.list_dentries();
-        dentries.erase(target);
-        dentries.emplace(name, inode_id_for_renaming);
-        dir.save_dentries(dentries);
+
+        auto source_parent = splitString(path);
+        const auto source = source_parent.back();
+        source_parent.pop_back();
+
+        auto target_parent = splitString(name);
+        const auto target = target_parent.back();
+        target_parent.pop_back();
+
+        auto source_parent_dir = get_inode_by_path<filesystem::directory_t>(source_parent);
+        auto target_parent_dir = get_inode_by_path<filesystem::directory_t>(target_parent);
+
+        auto src_dentries = source_parent_dir.list_dentries();
+        auto index_node_id = src_dentries.at(source);
+        src_dentries.erase(source);
+        source_parent_dir.save_dentries(src_dentries);
+
+        auto target_dentries = target_parent_dir.list_dentries();
+        if (target_dentries.contains(target)) {
+            return -EEXIST;
+        }
+        target_dentries.emplace(target, index_node_id);
+        target_parent_dir.save_dentries(target_dentries);
         return 0;
     }
     CATCH_TAIL
@@ -426,4 +439,8 @@ int do_mknod (const char * path, mode_t mode, dev_t device)
         return 0;
     }
     CATCH_TAIL;
+}
+
+uint64_t free_space() {
+    return filesystem_instance->free_space();
 }

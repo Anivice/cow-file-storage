@@ -4,6 +4,7 @@
 #include <vector>
 #include <string>
 #include <sys/stat.h>
+#include <cstdint>
 
 int do_getattr (const char *path, struct stat *stbuf);
 int do_readdir (const char *path, std::vector < std::string > & entries);
@@ -32,5 +33,6 @@ int do_readlink (const char * path, char * buffer, size_t size);
 void do_destroy ();
 void do_init(const std::string & location);
 int do_mknod (const char * path, mode_t mode, dev_t device);
+uint64_t free_space();
 
 #endif //OPERATIONS_H

@@ -249,7 +249,6 @@ void clear_entries(basic_io_t & io, cfs_head_t & head)
     clear_region(head.static_info.journal_start, head.static_info.journal_end);
     clear_region(head.static_info.data_table_start, head.static_info.data_table_start + head.static_info.block_over_sector);
     filesystem::inode_t::inode_header_t header {};
-    std::strncpy(header.name, "FILESYSTEM ROOT", CFS_MAX_FILENAME_LENGTH - 1);
     header.attributes.st_mode = S_IFDIR;
     header.attributes.st_atim = header.attributes.st_ctim = header.attributes.st_mtim = filesystem::inode_t::get_current_time();
     header.attributes.st_blksize = static_cast<long>(head.static_info.block_size);

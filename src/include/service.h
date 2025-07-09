@@ -173,7 +173,6 @@ public:
 
     public:
         struct inode_header_t {
-            char name[CFS_MAX_FILENAME_LENGTH];
             struct stat attributes;
         };
 
@@ -215,10 +214,10 @@ public:
     public:
         explicit directory_t(filesystem & fs, const uint64_t inode_id, const uint64_t block_size) : inode_t(fs, inode_id, block_size)
         {
-            if (const auto [name, attributes] = get_header();
-                (attributes.st_mode & S_IFMT) != S_IFDIR)
+            if (const auto &[attributes] = get_header();
+                !(attributes.st_mode & S_IFDIR))
             {
-                throw fs_error::not_a_directory(name);
+                throw fs_error::not_a_directory("");
             }
         }
 
@@ -237,7 +236,6 @@ public:
     requires (std::is_same_v<InodeType, directory_t> || std::is_same_v<InodeType, inode_t> || std::is_same_v<InodeType, file_t>)
     InodeType make_inode(const uint64_t data_field_block_id)
     {
-        std::lock_guard lock(mutex);
         if (const auto attr = block_manager->get_attr(data_field_block_id); attr.type == INDEX_TYPE) {
             return InodeType{*this, data_field_block_id, block_manager->block_size};
         }
@@ -248,6 +246,11 @@ public:
     void sync() {
         std::lock_guard lock(mutex);
         block_io->sync();
+    }
+
+    uint64_t free_space() {
+        std::lock_guard lock(mutex);
+        return block_manager->free_blocks() * block_manager->block_size;
     }
 
     explicit filesystem(const char * location);
