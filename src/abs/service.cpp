@@ -434,10 +434,11 @@ void filesystem::clear_frozen_but_1()
     {
         if (block_manager->block_allocated(i))
         {
-            if (auto attr = block_manager->get_attr(i); attr.frozen > 1)
+            if (auto attr = block_manager->get_attr(i); attr.frozen > 1 && attr.links == 0)
             {
                 attr.frozen = 0;
                 block_manager->set_attr(i, attr);
+                block_manager->free_block(i);
             }
         }
     }
@@ -452,10 +453,11 @@ void filesystem::clear_frozen_all()
     {
         if (block_manager->block_allocated(i))
         {
-            if (auto attr = block_manager->get_attr(i); attr.frozen > 0)
+            if (auto attr = block_manager->get_attr(i); attr.frozen > 0 && attr.links == 0)
             {
                 attr.frozen = 0;
                 block_manager->set_attr(i, attr);
+                block_manager->free_block(i);
             }
         }
     }

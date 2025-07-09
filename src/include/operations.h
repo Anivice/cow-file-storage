@@ -30,7 +30,7 @@ int do_fgetattr (const char * path, struct stat * statbuf);
 int do_ftruncate (const char * path, off_t length);
 int do_readlink (const char * path, char * buffer, size_t size);
 void do_destroy ();
-void do_init();
+void do_init(const std::string & location);
 int do_mknod (const char * path, mode_t mode, dev_t device);
 
 #endif //OPERATIONS_H

@@ -1,115 +1,429 @@
 #include <unistd.h>
 #include <sys/param.h>
+#include <memory>
+#include <sstream>
+#include <functional>
 #include "operations.h"
+#include "service.h"
+#include "helper/log.h"
+std::unique_ptr < filesystem > filesystem_instance;
+std::mutex operations_mutex;
+
+std::vector<std::string> splitString(const std::string& s, const char delim = '/')
+{
+    std::vector<std::string> parts;
+    std::string token;
+    std::stringstream ss(s);
+
+    while (std::getline(ss, token, delim)) {
+        parts.push_back(token);
+    }
+
+    assert_short(!parts.empty() && parts.front().empty());
+    parts.erase(parts.begin());
+    return parts;
+}
+
+template < typename InodeType >
+[[nodiscard]] InodeType get_inode_by_path(const std::vector<std::string> & path_vec)
+{
+    uint64_t current_entry = 0;
+    for (const auto & entry : path_vec)
+    {
+        auto dir = filesystem_instance->make_inode<filesystem::directory_t>(current_entry);
+        current_entry = dir.get_inode(entry);
+    }
+
+    return filesystem_instance->make_inode<InodeType>(current_entry);
+}
+
+#define CATCH_TAIL                                          \
+    catch (fs_error::no_such_file_or_directory &) {         \
+        return -ENOENT;                                     \
+    } catch (fs_error::not_a_directory &) {                 \
+        return -ENOTDIR;                                    \
+    } catch (std::exception &e) {                           \
+        error_log("Unhandled exception: ", e.what());       \
+        return -EIO;                                        \
+    } catch (...) {                                         \
+        return -EIO;                                        \
+    }
+
+#define RETURN_ENOTDIR_WHEN_NOT_A_DIR(inode)                                    \
+    if (((inode).get_header().attributes.st_mode & S_IFMT) != S_IFDIR) {        \
+        return -ENOTDIR;                                                        \
+    }
 
 int do_getattr (const char *path, struct stat *stbuf)
 {
+    try {
+        std::lock_guard lock(operations_mutex);
+        auto inode = get_inode_by_path<filesystem::inode_t>(splitString(path));
+        auto header = inode.get_header();
+        header.attributes.st_atim = filesystem::inode_t::get_current_time();
+        inode.save_header(header);
+        *stbuf = inode.get_header().attributes;
+        return 0;
+    }
+    CATCH_TAIL
 }
 
 int do_readdir (const char *path, std::vector < std::string > & entries)
 {
-    entries.emplace_back(".");
-    entries.emplace_back("..");
+    try {
+        std::lock_guard lock(operations_mutex);
+        entries.emplace_back(".");
+        entries.emplace_back("..");
+        auto inode = get_inode_by_path<filesystem::directory_t>(splitString(path));
+
+        for (auto dentries = inode.list_dentries();
+            const auto & dentry : dentries | std::views::keys)
+        {
+            entries.push_back(dentry);
+        }
+
+        auto header = inode.get_header();
+        header.attributes.st_atim = filesystem::inode_t::get_current_time();
+        inode.save_header(header);
+        return 0;
+    }
+    CATCH_TAIL
 }
 
-int do_mkdir (const char * path, mode_t mode)
+int do_mkdir (const char * path, const mode_t mode)
 {
+    try {
+        std::lock_guard lock(operations_mutex);
+        auto path_vec = splitString(path);
+        const auto target = path_vec.back();
+        path_vec.pop_back();
+        auto inode = get_inode_by_path<filesystem::directory_t>(path_vec);
+        inode.create_dentry(target, mode | S_IFDIR);
+        return 0;
+    }
+    CATCH_TAIL
 }
 
-int do_chmod (const char * path, mode_t mode)
+int do_chown (const char * path, const uid_t uid, const gid_t gid)
 {
+    try
+    {
+        auto inode = get_inode_by_path<filesystem::inode_t>(splitString(path));
+        auto header = inode.get_header();
+        header.attributes.st_uid = uid;
+        header.attributes.st_gid = gid;
+        header.attributes.st_ctim = filesystem::inode_t::get_current_time();
+        inode.save_header(header);
+        return 0;
+    }
+    CATCH_TAIL;
 }
 
-int do_create (const char * path, mode_t mode)
+int do_chmod (const char * path, const mode_t mode)
 {
+    try {
+        std::lock_guard lock(operations_mutex);
+        auto inode = get_inode_by_path<filesystem::inode_t>(splitString(path));
+        auto header = inode.get_header();
+        header.attributes.st_mode = mode;
+        header.attributes.st_ctim = filesystem::inode_t::get_current_time();
+        inode.save_header(header);
+        return 0;
+    }
+    CATCH_TAIL
 }
 
-int do_flush (const char * path)
+int do_create (const char * path, const mode_t mode)
 {
-    return 0;
+    try {
+        std::lock_guard lock(operations_mutex);
+        auto path_vec = splitString(path);
+        const auto target = path_vec.back();
+        path_vec.pop_back();
+        auto inode = get_inode_by_path<filesystem::directory_t>(path_vec);
+        inode.create_dentry(target, mode);
+        return 0;
+    }
+    CATCH_TAIL
 }
 
-int do_release (const char * path)
+int do_flush (const char *)
+{
+    try {
+        std::lock_guard lock(operations_mutex);
+        filesystem_instance->sync();
+        return 0;
+    }
+    CATCH_TAIL
+}
+
+int do_release (const char *)
 {
     return 0;
 }
 
 int do_access (const char * path, int mode)
 {
+    try {
+        std::lock_guard lock(operations_mutex);
+        auto inode = get_inode_by_path<filesystem::inode_t>(splitString(path));
+        const auto fstat = inode.get_header().attributes;
+
+        if (mode == F_OK)
+        {
+            return 0;
+        }
+
+        // permission check:
+        mode <<= 6;
+        mode &= 0x01C0;
+        return -!(mode & fstat.st_mode);
+    }
+    CATCH_TAIL
 }
 
 int do_open (const char * path)
 {
+    try {
+        std::lock_guard lock(operations_mutex);
+        auto inode = get_inode_by_path<filesystem::inode_t>(splitString(path));
+        if (const auto [name, attributes] = inode.get_header();
+            attributes.st_mode & S_IFDIR)
+        {
+            return -EISDIR;
+        }
+        return 0;
+    }
+    CATCH_TAIL
 }
 
-int do_read (const char *path, char *buffer, size_t size, off_t offset)
+int do_read (const char *path, char *buffer, const size_t size, const off_t offset)
 {
+    try {
+        std::lock_guard lock(operations_mutex);
+        auto inode = get_inode_by_path<filesystem::inode_t>(splitString(path));
+        inode.read(buffer, size, offset);
+        return 0;
+    }
+    CATCH_TAIL
 }
 
-int do_write (const char * path, const char * buffer, size_t size, off_t offset)
+int do_write (const char * path, const char * buffer, const size_t size, const off_t offset)
 {
+    try {
+        std::lock_guard lock(operations_mutex);
+        auto inode = get_inode_by_path<filesystem::inode_t>(splitString(path));
+        if (const auto [name, attributes] = inode.get_header();
+            static_cast<uint64_t>(attributes.st_size) < (offset + size))
+        {
+            inode.resize(size + offset);
+        }
+        inode.write(buffer, size, offset);
+        return 0;
+    }
+    CATCH_TAIL
 }
 
-int do_utimens (const char * path, const struct timespec tv[2])
+int do_utimens (const char * path, const timespec tv[2])
 {
+    try {
+        std::lock_guard lock(operations_mutex);
+        auto inode = get_inode_by_path<filesystem::inode_t>(splitString(path));
+        auto header = inode.get_header();
+        header.attributes.st_atim = tv[0];
+        header.attributes.st_mtim = tv[1];
+        inode.save_header(header);
+        return 0;
+    }
+    CATCH_TAIL
 }
 
 int do_unlink (const char * path)
 {
+    try {
+        std::lock_guard lock(operations_mutex);
+        auto path_vec = splitString(path);
+        const auto target = path_vec.back();
+        path_vec.pop_back();
+        auto inode = get_inode_by_path<filesystem::directory_t>(path_vec);
+        const auto target_inode_id = inode.get_inode(target);
+        if (auto target_inode = filesystem_instance->make_inode<filesystem::inode_t>(target_inode_id);
+            target_inode.get_header().attributes.st_mode & S_IFDIR)
+        {
+            return -EISDIR;
+        }
+
+        inode.unlink_inode(target);
+        return 0;
+    }
+    CATCH_TAIL
 }
 
 int do_rmdir (const char * path)
 {
+    try {
+        std::lock_guard lock(operations_mutex);
+        auto path_vec = splitString(path);
+        const auto target = path_vec.back();
+        path_vec.pop_back();
+        auto inode = get_inode_by_path<filesystem::directory_t>(path_vec);
+        if (inode.get_header().attributes.st_size != 0) {
+            return ENOTEMPTY;
+        }
+        inode.unlink_inode(target);
+        return 0;
+    }
+    CATCH_TAIL
 }
 
-int do_fsync (const char * path, int)
+int do_fsync (const char *, int)
 {
+    try {
+        std::lock_guard lock(operations_mutex);
+        filesystem_instance->sync();
+        return 0;
+    }
+    CATCH_TAIL
 }
 
-int do_releasedir (const char * path)
+int do_releasedir (const char *)
 {
+    try {
+        std::lock_guard lock(operations_mutex);
+        filesystem_instance->sync();
+        return 0;
+    }
+    CATCH_TAIL
 }
 
-int do_fsyncdir (const char * path, int)
+int do_fsyncdir (const char *, int)
 {
+    try {
+        std::lock_guard lock(operations_mutex);
+        filesystem_instance->sync();
+        return 0;
+    }
+    CATCH_TAIL
 }
 
-int do_truncate (const char * path, off_t size)
+int do_truncate (const char * path, const off_t size)
 {
+    try {
+        std::lock_guard lock(operations_mutex);
+        auto inode = get_inode_by_path<filesystem::inode_t>(splitString(path));
+        inode.resize(size);
+        return 0;
+    }
+    CATCH_TAIL
 }
 
 int do_symlink  (const char * path, const char * target)
 {
+    try {
+        std::lock_guard lock(operations_mutex);
+        auto path_vec = splitString(target);
+        const auto target_link = path_vec.back();
+        path_vec.pop_back();
+        auto inode = get_inode_by_path<filesystem::directory_t>(path_vec);
+        auto new_inode = inode.create_dentry(target_link, S_IFLNK | 0755);
+        new_inode.write(path, strlen(path), 0);
+        return 0;
+    }
+    CATCH_TAIL
 }
 
 int do_rename (const char * path, const char * name)
 {
+    try {
+        std::lock_guard lock(operations_mutex);
+        auto path_vec = splitString(path);
+        const auto target = path_vec.back();
+        path_vec.pop_back();
+        auto dir = get_inode_by_path<filesystem::directory_t>(path_vec);
+        const auto inode_id_for_renaming = dir.get_inode(target);
+        auto inode_for_renaming = filesystem_instance->make_inode<filesystem::inode_t>(inode_id_for_renaming);
+        auto header = inode_for_renaming.get_header();
+        std::strncpy(header.name, name, CFS_MAX_FILENAME_LENGTH - 1);
+        header.attributes.st_ctim = header.attributes.st_atim = filesystem::inode_t::get_current_time();
+        inode_for_renaming.save_header(header);
+        auto dentries = dir.list_dentries();
+        dentries.erase(target);
+        dentries.emplace(name, inode_id_for_renaming);
+        dir.save_dentries(dentries);
+        return 0;
+    }
+    CATCH_TAIL
 }
 
 int do_fallocate(const char * path, int mode, off_t offset, off_t length)
 {
+    try {
+        std::lock_guard lock(operations_mutex);
+        auto inode = get_inode_by_path<filesystem::inode_t>(splitString(path));
+        inode.resize(offset + length);
+        auto header = inode.get_header();
+        header.attributes.st_mode = mode | S_IFREG;
+        header.attributes.st_ctim = filesystem::inode_t::get_current_time();
+        inode.save_header(header);
+        return 0;
+    }
+    CATCH_TAIL
 }
 
 int do_fgetattr (const char * path, struct stat * statbuf)
 {
+    return do_getattr(path, statbuf);
 }
 
-int do_ftruncate (const char * path, off_t length)
+int do_ftruncate (const char * path, const off_t length)
 {
+    return do_truncate(path, length);
 }
 
 int do_readlink (const char * path, char * buffer, size_t size)
 {
+    try {
+        std::lock_guard lock(operations_mutex);
+        auto inode = get_inode_by_path<filesystem::inode_t>(splitString(path));
+        auto header = inode.get_header();
+        if ((header.attributes.st_mode & S_IFMT) == S_IFLNK) {
+            header.attributes.st_atim = filesystem::inode_t::get_current_time();
+            inode.save_header(header);
+            inode.read(buffer, size, 0);
+            return 0;
+        }
+
+        return -EINVAL;
+    }
+    CATCH_TAIL
 }
 
 void do_destroy ()
 {
+    std::lock_guard lock(operations_mutex);
+    filesystem_instance.reset();
 }
 
-void do_init()
+void do_init(const std::string & location)
 {
+    std::lock_guard lock(operations_mutex);
+    filesystem_instance = std::make_unique<filesystem>(location.c_str());
 }
 
 int do_mknod (const char * path, mode_t mode, dev_t device)
 {
+    try
+    {
+        std::lock_guard lock(operations_mutex);
+        auto path_vec = splitString(path);
+        const auto target_name = path_vec.back();
+        path_vec.pop_back();
+        auto inode = get_inode_by_path<filesystem::directory_t>(path_vec);
+        auto new_inode = inode.create_dentry(target_name, mode);
+        auto header = new_inode.get_header();
+        header.attributes.st_dev = device;
+        inode.save_header(header);
+        return 0;
+    }
+    CATCH_TAIL;
 }

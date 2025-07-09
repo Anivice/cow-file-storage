@@ -20,8 +20,7 @@
 
 #include <atomic>
 #include <algorithm>
-
-#include "../include/core/block_attr.h"
+#include "core/block_attr.h"
 #include "core/cfs.h"
 #include "helper/cpp_assert.h"
 #include "helper/log.h"
@@ -29,6 +28,7 @@
 #include "helper/color.h"
 #include "core/crc64sum.h"
 #include "core/basic_io.h"
+#include "service.h"
 
 namespace mkfs {
     const arg_parser::parameter_vector Arguments = {
@@ -248,9 +248,23 @@ void clear_entries(basic_io_t & io, cfs_head_t & head)
     clear_region(head.static_info.data_block_attribute_table_start, head.static_info.data_block_attribute_table_end);
     clear_region(head.static_info.journal_start, head.static_info.journal_end);
     clear_region(head.static_info.data_table_start, head.static_info.data_table_start + head.static_info.block_over_sector);
+    filesystem::inode_t::inode_header_t header {};
+    std::strncpy(header.name, "FILESYSTEM ROOT", CFS_MAX_FILENAME_LENGTH - 1);
+    header.attributes.st_mode = S_IFDIR;
+    header.attributes.st_atim = header.attributes.st_ctim = header.attributes.st_mtim = filesystem::inode_t::get_current_time();
+    header.attributes.st_blksize = static_cast<long>(head.static_info.block_size);
+    header.attributes.st_blocks = 1;
+    header.attributes.st_nlink = 1;
+    header.attributes.st_uid = getuid();
+    header.attributes.st_gid = getgid();
+
+    sector_data_t root_data{};
+    static_assert(sizeof(header) < 512);
+    std::memcpy(root_data.data(), &header, sizeof(header));
+    io.write(root_data, head.static_info.data_table_start * head.static_info.block_over_sector);
 
     sector_data_t data{};
-    cfs_blk_attr_t attr{
+    constexpr cfs_blk_attr_t attr{
         .frozen = 0,
         .type = INDEX_TYPE,
         .type_backup = 0,

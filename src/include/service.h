@@ -23,6 +23,8 @@
 
 #include <filesystem>
 #include <memory>
+#include <service.h>
+#include <service.h>
 #include <sys/stat.h>
 #include "core/blk_manager.h"
 #include "helper/cpp_assert.h"
@@ -66,6 +68,8 @@ namespace fs_error {
     MAKE_ERROR_TYPE(filesystem_space_depleted);
     MAKE_ERROR_TYPE(filesystem_frozen_block_protection);
     MAKE_ERROR_TYPE(no_such_file_or_directory);
+    MAKE_ERROR_TYPE(not_a_directory);
+    MAKE_ERROR_TYPE(is_a_directory);
     MAKE_ERROR_TYPE(unknown_error);
 }
 
@@ -114,6 +118,7 @@ class filesystem
     void revert_transaction();
     void delink_block(uint64_t data_field_block_id);
 
+public:
     class inode_t
     {
     protected:
@@ -126,7 +131,7 @@ class filesystem
         const uint64_t block_max_entries;
         std::vector<uint64_t> block_pointers;
 
-    protected:
+    public:
         static timespec get_current_time()
         {
             timespec ts{};
@@ -166,7 +171,7 @@ class filesystem
 
         std::mutex mutex;
 
-    protected:
+    public:
         struct inode_header_t {
             char name[CFS_MAX_FILENAME_LENGTH];
             struct stat attributes;
@@ -189,18 +194,18 @@ class filesystem
         explicit inode_t(filesystem & fs, uint64_t inode_id, uint64_t block_size);
         uint64_t read(void *buff, uint64_t size, uint64_t offset);
         uint64_t write(const void * buff, uint64_t size, uint64_t offset);
-        inode_header_t get_header();
+        [[nodiscard]] inode_header_t get_header();
         void save_header(const inode_header_t & header);
         void resize(uint64_t new_size);
+        void unlink_self();
     };
 
-public:
-    class file_t : public inode_t {
+    class file_t final : public inode_t {
     public:
         explicit file_t(filesystem & fs, const uint64_t inode_id, const uint64_t block_size) : inode_t(fs, inode_id, block_size) { }
     };
 
-    class directory_t : private inode_t {
+    class directory_t final : public inode_t {
     private:
         struct dentry_t {
             char name[CFS_MAX_FILENAME_LENGTH];
@@ -208,15 +213,41 @@ public:
         };
 
     public:
-        explicit directory_t(filesystem & fs, const uint64_t inode_id, const uint64_t block_size) : inode_t(fs, inode_id, block_size) { }
+        explicit directory_t(filesystem & fs, const uint64_t inode_id, const uint64_t block_size) : inode_t(fs, inode_id, block_size)
+        {
+            if (const auto [name, attributes] = get_header();
+                (attributes.st_mode & S_IFMT) != S_IFDIR)
+            {
+                throw fs_error::not_a_directory(name);
+            }
+        }
+
         std::map < std::string, uint64_t > list_dentries();
         void save_dentries(const std::map < std::string, uint64_t > & dentries);
-        inode_t create_dentry(const std::string & name, const mode_t mode);
-        inode_t get_inode(const std::string & name);
+        inode_t create_dentry(const std::string & name, mode_t mode);
+        uint64_t get_inode(const std::string & name);
+        void unlink_inode(const std::string & name);
     };
 
-    directory_t get_root() {
-        return directory_t{*this, 0, block_manager->block_size};
+    std::unique_ptr < directory_t > get_root() {
+        return std::make_unique<directory_t>(*this, 0, block_manager->block_size);
+    }
+
+    template < typename InodeType >
+    requires (std::is_same_v<InodeType, directory_t> || std::is_same_v<InodeType, inode_t> || std::is_same_v<InodeType, file_t>)
+    InodeType make_inode(const uint64_t data_field_block_id)
+    {
+        std::lock_guard lock(mutex);
+        if (const auto attr = block_manager->get_attr(data_field_block_id); attr.type == INDEX_TYPE) {
+            return InodeType{*this, data_field_block_id, block_manager->block_size};
+        }
+
+        throw runtime_error("Block is not an index");
+    }
+
+    void sync() {
+        std::lock_guard lock(mutex);
+        block_io->sync();
     }
 
     explicit filesystem(const char * location);

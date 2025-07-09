@@ -82,7 +82,39 @@ void filesystem::inode_t::save_header(const filesystem::inode_t::inode_header_t 
 
 void filesystem::inode_t::resize(const uint64_t new_size) {
     std::lock_guard<std::mutex> guard(mutex);
+    auto header = unblocked_get_header();
+    header.attributes.st_mtim = get_current_time();
+    unblocked_save_header(header);
     unblocked_resize(new_size);
+}
+
+void filesystem::inode_t::unlink_self()
+{
+    std::lock_guard<std::mutex> guard(mutex);
+    const auto level2_blocks = linearized_level2_pointers();
+    const auto level3_blocks = linearized_level3_pointers();
+    auto unlink_block = [&](const uint64_t block_id)
+    {
+        fs.delink_block(block_id);
+        const auto attr = fs.block_manager->get_attr(block_id);
+        if (attr.frozen) {
+            return;
+        }
+
+        if (attr.links == 0) {
+            fs.deallocate_block(block_id);
+        }
+    };
+
+    auto unlink_blocks = [&](const std::vector < uint64_t > & block_ids) {
+        for (const auto block_id : block_ids) {
+            unlink_block(block_id);
+        }
+    };
+
+    unlink_blocks(level2_blocks);
+    unlink_blocks(level3_blocks);
+    unlink_block(inode_id);
 }
 
 struct block_mapping_tail_t {
@@ -537,13 +569,23 @@ void filesystem::directory_t::save_dentries(const std::map < std::string, uint64
     }
 }
 
-filesystem::inode_t filesystem::directory_t::get_inode(const std::string & name)
+uint64_t filesystem::directory_t::get_inode(const std::string & name)
 {
     try {
-        return inode_t{fs, list_dentries()[name], fs.block_manager->block_size};
+        return list_dentries()[name];
     } catch (const std::out_of_range &) {
         throw fs_error::no_such_file_or_directory("");
     }
+}
+
+void filesystem::directory_t::unlink_inode(const std::string & name)
+{
+    auto list = list_dentries();
+    const auto inode_id = get_inode(name);
+    list.erase(name);
+    save_dentries(list);
+    auto inode = fs.make_inode<inode_t>(inode_id);
+    inode.unlink_self();
 }
 
 filesystem::inode_t filesystem::directory_t::create_dentry(const std::string & name, const mode_t mode)
@@ -575,6 +617,9 @@ filesystem::inode_t filesystem::directory_t::create_dentry(const std::string & n
     inode_header.attributes.st_blksize = static_cast<long>(fs.block_manager->block_size);
     inode_header.attributes.st_nlink = 1;
     inode_header.attributes.st_mode = mode;
+    inode_header.attributes.st_gid = getgid();
+    inode_header.attributes.st_uid = getuid();
+    inode_header.attributes.st_ino = dentry.inode_id;
     save_header(inode_header);
 
     // add new dentry to dentry list
