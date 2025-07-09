@@ -198,13 +198,13 @@ int fsck_main(int argc, char **argv)
                 std::cout << std::endl;
 
                 // journaling
-                journaling journal(block_io);
-                const auto journal_entries = journal.export_journaling();
-                for (const auto decoded = decoder_jentries(journal_entries);
-                    const auto & entry : decoded)
-                {
-                    std::cout << entry << std::endl;
-                }
+                // journaling journal(block_io);
+                // const auto journal_entries = journal.export_journaling();
+                // for (const auto decoded = decoder_jentries(journal_entries);
+                //     const auto & entry : decoded)
+                // {
+                //     std::cout << entry << std::endl;
+                // }
                 //
                 // std::cout << std::endl << std::endl << std::endl;
                 //

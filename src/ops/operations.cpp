@@ -42,6 +42,8 @@ template < typename InodeType >
         return -ENOENT;                                     \
     } catch (fs_error::not_a_directory &) {                 \
         return -ENOTDIR;                                    \
+    } catch (fs_error::filesystem_space_depleted &) {       \
+        return -ENOSPC;                                     \
     } catch (std::exception &e) {                           \
         error_log("Unhandled exception: ", e.what());       \
         return -EIO;                                        \
@@ -81,10 +83,6 @@ int do_readdir (const char *path, std::vector < std::string > & entries)
         {
             entries.push_back(dentry);
         }
-
-        auto header = inode.get_header();
-        header.attributes.st_atim = filesystem::inode_t::get_current_time();
-        inode.save_header(header);
         return 0;
     }
     CATCH_TAIL
@@ -340,30 +338,46 @@ int do_rename (const char * path, const char * name)
 {
     try {
         std::lock_guard lock(operations_mutex);
+        if (std::string(path) != "/") {
+            auto source_parent = splitString(path);
+            const auto source = source_parent.back();
+            source_parent.pop_back();
 
-        auto source_parent = splitString(path);
-        const auto source = source_parent.back();
-        source_parent.pop_back();
+            auto target_parent = splitString(name);
+            const auto target = target_parent.back();
+            target_parent.pop_back();
 
-        auto target_parent = splitString(name);
-        const auto target = target_parent.back();
-        target_parent.pop_back();
+            auto source_parent_dir = get_inode_by_path<filesystem::directory_t>(source_parent);
+            auto target_parent_dir = get_inode_by_path<filesystem::directory_t>(target_parent);
 
-        auto source_parent_dir = get_inode_by_path<filesystem::directory_t>(source_parent);
-        auto target_parent_dir = get_inode_by_path<filesystem::directory_t>(target_parent);
+            auto src_dentries = source_parent_dir.list_dentries();
+            auto index_node_id = src_dentries.at(source);
+            src_dentries.erase(source);
+            source_parent_dir.save_dentries(src_dentries);
 
-        auto src_dentries = source_parent_dir.list_dentries();
-        auto index_node_id = src_dentries.at(source);
-        src_dentries.erase(source);
-        source_parent_dir.save_dentries(src_dentries);
+            auto target_dentries = target_parent_dir.list_dentries();
+            if (target_dentries.contains(target)) {
+                return -EEXIST;
+            }
+            target_dentries.emplace(target, index_node_id);
+            target_parent_dir.save_dentries(target_dentries);
+            return 0;
+        } else {
+            debug_log("Snapshot creation request, target at ", name);
+            auto target_parent = splitString(name);
+            const auto target = target_parent.back();
+            target_parent.pop_back();
+            if (!target_parent.empty()) {
+                error_log("Snapshot cannot be created under any location other than root!");
+                return -EPERM;
+            }
 
-        auto target_dentries = target_parent_dir.list_dentries();
-        if (target_dentries.contains(target)) {
-            return -EEXIST;
+            filesystem_instance->sync();
+            auto root = get_inode_by_path<filesystem::directory_t>({});
+            root.snapshot(target);
+            debug_log("Snapshot creation completed for ", name);
+            return 0;
         }
-        target_dentries.emplace(target, index_node_id);
-        target_parent_dir.save_dentries(target_dentries);
-        return 0;
     }
     CATCH_TAIL
 }

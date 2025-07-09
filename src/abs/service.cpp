@@ -175,18 +175,7 @@ uint64_t filesystem::unblocked_write_block(const uint64_t data_field_block_id, c
 
     if (block_manager->get_attr(data_field_block_id).frozen)
     {
-        new_block = unblocked_allocate_new_block();
-        ACTION_START(actions::ACTION_TRANSACTION_MODIFY_DATA_FIELD_BLOCK_CONTENT, data_field_block_id, new_block, data_block->crc64(), 1);
-        auto new_cow = block_manager->safe_get_block(new_block);
-        std::vector<uint8_t> old_block_data;
-        old_block_data.resize(block_manager->block_size);
-        data_block->get(old_block_data.data(), block_manager->block_size, 0);
-        new_cow->update(old_block_data.data(), block_manager->block_size, 0);
-        const auto old_attr = block_manager->get_attr(data_field_block_id);
-        block_manager->set_attr(new_block, old_attr);
-        new_cow->update((uint8_t*)buff, size, offset);
-        ACTION_END(actions::ACTION_TRANSACTION_MODIFY_DATA_FIELD_BLOCK_CONTENT);
-        return size;
+        throw fs_error::filesystem_frozen_block_protection("");
     }
     else
     {
@@ -411,38 +400,19 @@ void filesystem::freeze_block()
 {
     std::lock_guard<std::mutex> lock(mutex);
     ACTION_START_NO_ARGS(actions::ACTION_FREEZE_BLOCK)
-    for (uint64_t i = 0; i < block_manager->blk_count; i++)
+    for (uint64_t i = 1; i < block_manager->blk_count; i++)
     {
         if (block_manager->block_allocated(i))
         {
             if (auto attr = block_manager->get_attr(i);
-                attr.frozen < 3 && attr.type != COW_REDUNDANCY_TYPE)
+                !attr.frozen && attr.type != COW_REDUNDANCY_TYPE)
             {
-                attr.frozen++;
+                attr.frozen = 1;
                 block_manager->set_attr(i, attr);
             }
         }
     }
     ACTION_END(actions::ACTION_FREEZE_BLOCK)
-}
-
-void filesystem::clear_frozen_but_1()
-{
-    std::lock_guard<std::mutex> lock(mutex);
-    ACTION_START_NO_ARGS(actions::ACTION_CLEAR_FROZEN_BLOCK_BUT_ONE)
-    for (uint64_t i = 0; i < block_manager->blk_count; i++)
-    {
-        if (block_manager->block_allocated(i))
-        {
-            if (auto attr = block_manager->get_attr(i); attr.frozen > 1 && attr.links == 0)
-            {
-                attr.frozen = 0;
-                block_manager->set_attr(i, attr);
-                block_manager->free_block(i);
-            }
-        }
-    }
-    ACTION_END(actions::ACTION_CLEAR_FROZEN_BLOCK_BUT_ONE)
 }
 
 void filesystem::clear_frozen_all()

@@ -29,11 +29,13 @@ int mount_main(int argc, char **argv);
 int fsck_main(int argc, char **argv);
 
 constexpr uint64_t cfs_magick_number = 0xCFADBEEF20250701;
+#define SECTOR_SIZE (512ULL)
 
 struct cfs_head_t
 {
     uint64_t magick;    // fs magic
     struct {
+        char label [64];
         uint64_t sectors;               // sector numbers
         uint64_t block_over_sector;     // block_size = block_over_sector * sector_size (512)
         uint64_t block_size;
@@ -96,17 +98,9 @@ struct cfs_head_t
         uint64_t _30;
         uint64_t _31;
         uint64_t _32;
-        uint64_t _33;
-        uint64_t _34;
-        uint64_t _35;
-        uint64_t _36;
-        uint64_t _37;
-        uint64_t _38;
-        uint64_t _39;
-        uint64_t _40;
     } _reserved_;
 };
-static_assert(sizeof(cfs_head_t) == 512, "Faulty head size");
+static_assert(sizeof(cfs_head_t) == SECTOR_SIZE, "Faulty head size");
 
 inline uint64_t ceil_div(const uint64_t len, const uint64_t align) {
     return (len / align) + (len % align == 0 ? 0 : 1);
@@ -115,7 +109,5 @@ inline uint64_t ceil_div(const uint64_t len, const uint64_t align) {
 inline uint64_t get_timestamp() {
     return std::chrono::time_point_cast<std::chrono::seconds>(std::chrono::high_resolution_clock::now()).time_since_epoch().count();
 }
-
-#define SECTOR_SIZE (512ULL)
 
 #endif //CFS_H

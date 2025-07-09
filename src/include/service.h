@@ -24,7 +24,7 @@
 #include <filesystem>
 #include <memory>
 #include <service.h>
-#include <service.h>
+#include <helper/log.h>
 #include <sys/stat.h>
 #include "core/blk_manager.h"
 #include "helper/cpp_assert.h"
@@ -70,6 +70,7 @@ namespace fs_error {
     MAKE_ERROR_TYPE(no_such_file_or_directory);
     MAKE_ERROR_TYPE(not_a_directory);
     MAKE_ERROR_TYPE(is_a_directory);
+    MAKE_ERROR_TYPE(operation_bot_permitted);
     MAKE_ERROR_TYPE(unknown_error);
 }
 
@@ -112,8 +113,8 @@ class filesystem
 
     cfs_blk_attr_t get_attr(uint64_t data_field_block_id);
     void set_attr(uint64_t data_field_block_id, cfs_blk_attr_t attr);
+public:
     void freeze_block();
-    void clear_frozen_but_1();
     void clear_frozen_all();
     void revert_transaction();
     void delink_block(uint64_t data_field_block_id);
@@ -123,13 +124,10 @@ public:
     {
     protected:
         filesystem & fs;
-
-    private:
         const uint64_t inode_id; // data block id for inode
         const uint64_t block_size;
         const uint64_t inode_level_pointers;
         const uint64_t block_max_entries;
-        std::vector<uint64_t> block_pointers;
 
     public:
         static timespec get_current_time()
@@ -152,7 +150,20 @@ public:
             uint64_t mkblk();
 
             explicit level3(const uint64_t data_field_block_id, filesystem & fs, const bool control_active, const uint64_t block_size)
-                : fs(fs), data_field_block_id(data_field_block_id), control_active(control_active), block_size(block_size) { }
+                : fs(fs), data_field_block_id(data_field_block_id), control_active(control_active), block_size(block_size)
+            {
+                if (control_active && fs.get_attr(data_field_block_id).frozen)
+                {
+                    // auto create new pointer
+                    const auto new_ptr_id = mkblk();
+                    std::vector<uint8_t> ptr_data;
+                    ptr_data.resize(block_size);
+                    fs.read_block(data_field_block_id, ptr_data.data(), block_size, 0);
+                    fs.write_block(new_ptr_id, ptr_data.data(), block_size, 0);
+                    this->data_field_block_id = new_ptr_id;
+                }
+            }
+
             explicit level3(filesystem & fs, const bool control_active, const uint64_t block_size)
                 : fs(fs), control_active(control_active), block_size(block_size)
             {
@@ -185,6 +196,8 @@ public:
         void save_pointer_to_block(uint64_t data_field_block_id, const std::vector < uint64_t > & block_pointers);
 
         void unblocked_resize(uint64_t file_length);
+
+    public:
         void redirect_3rd_level_block(uint64_t old_data_field_block_id, uint64_t new_data_field_block_id);
         std::vector<uint64_t> linearized_level3_pointers();
         std::vector<uint64_t> linearized_level2_pointers();
@@ -226,6 +239,7 @@ public:
         inode_t create_dentry(const std::string & name, mode_t mode);
         uint64_t get_inode(const std::string & name);
         void unlink_inode(const std::string & name);
+        void snapshot(const std::string & name);
     };
 
     std::unique_ptr < directory_t > get_root() {

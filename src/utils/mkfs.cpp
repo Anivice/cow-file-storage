@@ -37,6 +37,7 @@ namespace mkfs {
         { .name = "verbose",    .short_name = 'V', .arg_required = false,   .description = "Enable verbose output" },
         { .name = "path",       .short_name = 'p', .arg_required = true,    .description = "Path to disk/file" },
         { .name = "block",      .short_name = 'b', .arg_required = true,    .description = "Block size" },
+        { .name = "label",      .short_name = 'L', .arg_required = true,    .description = "Label" },
     };
 
     void print_help(const std::string & program_name)
@@ -70,27 +71,27 @@ namespace mkfs {
     }
 }
 
-long long solveC(long long Count, long long Scale)
+uint64_t solveC(const uint64_t Count, const uint64_t Scale)
 {
-    if (Scale <= 0) return -1;                      // guard bad input
+    if (Scale <= 0) return UINT64_MAX;                      // guard bad input
 
-    long long lo = 0;
-    long long hi = Count;                           // f(C) ≥ C, so Count is still an upper bound
+    uint64_t lo = 0;
+    uint64_t hi = Count;                           // f(C) ≥ C, so Count is still an upper bound
 
     while (lo < hi) {
-        long long mid = lo + ((hi - lo) >> 1);      // overflow‑safe midpoint
-        long long A   = ceil_div(mid, 4096 * Scale);
-        long long B   = ceil_div(mid,  256 * Scale);
-        long long cur = 2 * A + B + mid;
+        const uint64_t mid = lo + ((hi - lo) >> 1);      // overflow‑safe midpoint
+        const uint64_t A   = ceil_div(mid, 4096 * Scale);
+        const uint64_t B   = ceil_div(mid,  256 * Scale);
+        const uint64_t cur = 2 * A + B + mid;
         if (cur >= Count)
             hi = mid;
         else
             lo = mid + 1;
     }
 
-    long long A = ceil_div(lo, 4096 * Scale);
-    long long B = ceil_div(lo,  256 * Scale);
-    return (2 * A + B + lo == Count) ? lo : -1;     // verify exact equality
+    const uint64_t A = ceil_div(lo, 4096 * Scale);
+    const uint64_t B = ceil_div(lo,  256 * Scale);
+    return (2 * A + B + lo == Count) ? lo : UINT64_MAX;     // verify exact equality
 }
 
 bool is_2_power_of(unsigned long long x)
@@ -109,7 +110,7 @@ bool is_2_power_of(unsigned long long x)
     return false;
 }
 
-cfs_head_t make_head(const sector_t sectors, const uint64_t block_size)
+cfs_head_t make_head(const sector_t sectors, const uint64_t block_size, const std::string & label)
 {
     cfs_head_t head{};
     head.magick = head.magick_ = cfs_magick_number;
@@ -122,8 +123,8 @@ cfs_head_t make_head(const sector_t sectors, const uint64_t block_size)
     head.static_info.block_size        = block_size;
     head.static_info.sectors           = sectors;
     head.static_info.blocks            = sectors / head.static_info.block_over_sector;
-
-    const uint64_t body_size              = head.static_info.blocks - 2;     // head & tail
+    std::strncpy(head.static_info.label, label.c_str(), sizeof(head.static_info.label));
+    const uint64_t body_size           = head.static_info.blocks - 2;     // head & tail
     const uint64_t journaling_section_size= std::max<uint64_t>(body_size / 10, 32);
     assert_throw(body_size > journaling_section_size, "Not enough space");
 
@@ -132,9 +133,10 @@ cfs_head_t make_head(const sector_t sectors, const uint64_t block_size)
 
     uint64_t k = UINT64_MAX;
     uint64_t offset = 0;
-    while (k == UINT64_MAX && offset < left_over) {
-        const long long candidate = solveC(left_over - offset, scale);
-        if (candidate != -1)
+    while (k == UINT64_MAX && offset < left_over)
+    {
+        const uint64_t candidate = solveC(left_over - offset, scale);
+        if (candidate != UINT64_MAX)
             k = static_cast<uint64_t>(candidate);
         else
             ++offset;
@@ -324,12 +326,17 @@ int mkfs_main(int argc, char **argv)
             }
         }
 
+        std::string label;
+        if (contains("label", arg_val)) {
+            label = arg_val;
+        }
+
         if (contains("path", arg_val))
         {
-            verbose_log("Formatting disk ", arg_val);
+            verbose_log("Formatting disk ", arg_val, ", label being `", label, "`");
             basic_io_t io;
             io.open(arg_val.c_str());
-            auto head = make_head(io.get_file_sectors(), block_size);
+            auto head = make_head(io.get_file_sectors(), block_size, label);
             verbose_log("Clearing entries");
             clear_entries(io, head);
             head.runtime_info.last_check_timestamp = get_timestamp();

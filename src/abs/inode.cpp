@@ -77,10 +77,12 @@ filesystem::inode_t::inode_header_t filesystem::inode_t::get_header() {
 
 void filesystem::inode_t::save_header(const filesystem::inode_t::inode_header_t & header) {
     std::lock_guard<std::mutex> guard(mutex);
+    if (const auto attr = fs.get_attr(inode_id); attr.frozen) return;
     unblocked_save_header(header);
 }
 
-void filesystem::inode_t::resize(const uint64_t new_size) {
+void filesystem::inode_t::resize(const uint64_t new_size)
+{
     std::lock_guard<std::mutex> guard(mutex);
     auto header = unblocked_get_header();
     header.attributes.st_mtim = get_current_time();
@@ -303,14 +305,42 @@ void filesystem::inode_t::unblocked_resize(const uint64_t file_length)
 
 void filesystem::inode_t::redirect_3rd_level_block(const uint64_t old_data_field_block_id, const uint64_t new_data_field_block_id)
 {
-    const auto level1 = get_inode_block_pointers();
-    std::vector<uint64_t> block_pointers;
-    for (const auto & lv1_blk : level1)
+    auto try_save = [&](uint64_t & pointer, const std::vector<uint64_t> & data)->bool
+    {
+        // 1. check level 2 block, see if it's frozen
+        auto this_level_blk_ptr_attr = fs.get_attr(pointer);
+        if (!this_level_blk_ptr_attr.frozen) {
+            save_pointer_to_block(pointer, data);
+            return false;
+        }
+        else
+        {
+            const auto new_block = fs.allocate_new_block();
+
+            // 1. update block attributes
+            this_level_blk_ptr_attr.frozen = 0;
+            fs.set_attr(new_block, this_level_blk_ptr_attr);
+
+            // 2. copy data over
+            save_pointer_to_block(new_block, data);
+
+            debug_log("Redirecting immune block pointer ", pointer, " to new pointer block ", new_block);
+            // 3. update parent
+            pointer = new_block;
+            return true;
+        }
+    };
+
+    auto level1 = get_inode_block_pointers();
+    bool level1_pointers_changed = false;
+
+    for (auto & lv1_blk : level1)
     {
         if (lv1_blk != 0)
         {
-            const auto lv2_blks = get_pointer_by_block(lv1_blk);
-            for (const auto & lv2_blk : lv2_blks)
+            auto lv2_blks = get_pointer_by_block(lv1_blk);
+            bool level2_pointers_changed = false;
+            for (auto & lv2_blk : lv2_blks)
             {
                 if (lv2_blk != 0)
                 {
@@ -318,24 +348,32 @@ void filesystem::inode_t::redirect_3rd_level_block(const uint64_t old_data_field
                     auto lv3_blks = get_pointer_by_block(lv2_blk);
                     for (auto & lv3_blk : lv3_blks)
                     {
-                        if (lv3_blk != 0 && lv3_blk == old_data_field_block_id) {
+                        if (lv3_blk != 0 && lv3_blk == old_data_field_block_id)
+                        {
                             lv3_blk = new_data_field_block_id;
                             found = true;
+                            debug_log("Redirect block pointer from ", old_data_field_block_id, " to ", new_data_field_block_id);
                             break;
                         }
                     }
 
                     if (found) {
-                        save_pointer_to_block(lv2_blk, lv3_blks);
-                        return;
+                        level2_pointers_changed = try_save(lv2_blk, lv3_blks);
+                        break;
                     }
                 }
+            }
+
+            if (level2_pointers_changed) {
+                level1_pointers_changed = try_save(lv1_blk, lv2_blks);
+                break;
             }
         }
     }
 
-    debug_log("ERROR: Redirect block pointer from ", old_data_field_block_id, " to ", new_data_field_block_id,
-        " failed: No such block pointer in third level pointer map.");
+    if (level1_pointers_changed) {
+        save_inode_block_pointers(level1);
+    }
 }
 
 std::vector<uint64_t> filesystem::inode_t::linearized_level3_pointers()
@@ -392,6 +430,7 @@ uint64_t filesystem::inode_t::read(void *buff, uint64_t size, const uint64_t off
 {
     std::lock_guard<std::mutex> guard(mutex);
     auto header = unblocked_get_header();
+    auto inode_blk_attr = fs.get_attr(inode_id);
 
     if (header.attributes.st_size == 0) {
         return 0;
@@ -405,8 +444,11 @@ uint64_t filesystem::inode_t::read(void *buff, uint64_t size, const uint64_t off
         size = header.attributes.st_size - offset;
     }
 
-    header.attributes.st_atim = get_current_time();
-    unblocked_save_header(header);
+    if (!inode_blk_attr.frozen)
+    {
+        header.attributes.st_atim = get_current_time();
+        unblocked_save_header(header);
+    }
 
     const auto level3_blocks = linearized_level3_pointers();
 
@@ -581,8 +623,35 @@ void filesystem::directory_t::save_dentries(const std::map < std::string, uint64
 
 uint64_t filesystem::directory_t::get_inode(const std::string & name)
 {
-    try {
-        return list_dentries().at(name);
+    try
+    {
+        auto child = list_dentries().at(name);
+        auto child_attr = fs.get_attr(child);
+        const auto my_attr = fs.get_attr(get_header().attributes.st_ino);
+        if (child_attr.frozen && !my_attr.frozen && child_attr.frozen != 2)
+        {
+            // copy data
+            std::vector<uint8_t> old_inode_data;
+            old_inode_data.resize(block_size);
+            fs.read_block(child, old_inode_data.data(), block_size, 0);
+            const auto new_inode = fs.allocate_new_block();
+            // update inode number
+            ((inode_header_t*)old_inode_data.data())->attributes.st_ino = new_inode;
+            fs.write_block(new_inode, old_inode_data.data(), block_size, 0);
+
+            // copy attribute
+            child_attr.frozen = 0;
+            fs.set_attr(new_inode, child_attr);
+
+            debug_log("Inode duplicated due to frozen inode, inode ", child, ", new inode ", new_inode, ", parent ", get_header().attributes.st_ino);
+            child = new_inode;
+
+            // update dentry
+            auto old_dentry = list_dentries();
+            old_dentry.at(name) = new_inode;
+            save_dentries(old_dentry);
+        }
+        return child;
     } catch (const std::out_of_range &) {
         throw fs_error::no_such_file_or_directory("");
     }
@@ -596,6 +665,27 @@ void filesystem::directory_t::unlink_inode(const std::string & name)
     save_dentries(list);
     auto inode = fs.make_inode<inode_t>(inode_id);
     inode.unlink_self();
+}
+
+void filesystem::directory_t::snapshot(const std::string & name)
+{
+    if (inode_id != 0) {
+        throw fs_error::operation_bot_permitted("");
+    }
+
+    auto new_snapshot_vol = create_dentry(name, S_IFDIR | 0755);
+    auto dentries = list_dentries();
+    auto new_root = fs.make_inode<directory_t>(dentries.at(name));
+    dentries.erase(name);
+    new_root.save_dentries(dentries);
+
+    // set volume root
+    auto new_snapshot_vol_attr = fs.get_attr(new_snapshot_vol.get_header().attributes.st_ino);
+    new_snapshot_vol_attr.frozen = 2;
+    fs.set_attr(new_snapshot_vol.get_header().attributes.st_ino, new_snapshot_vol_attr);
+
+    // freeze
+    fs.freeze_block();
 }
 
 filesystem::inode_t filesystem::directory_t::create_dentry(const std::string & name, const mode_t mode)
@@ -631,6 +721,8 @@ filesystem::inode_t filesystem::directory_t::create_dentry(const std::string & n
     inode_header.attributes.st_uid = getuid();
     inode_header.attributes.st_ino = dentry.inode_id;
     new_inode.save_header(inode_header);
+
+    debug_log("Index node created at inode ID ", dentry.inode_id, ", name ", dentry.name, ", under ", get_header().attributes.st_ino);
 
     // add new dentry to dentry list
     auto dir = list_dentries();
