@@ -30,11 +30,19 @@ int main(int argc, char *argv[])
         debug_log("do_read: ", strerror(-do_read("/dir1/file2", buff, sizeof(buff), 0)), ": ", buff);
         std::memset(buff, 0, sizeof(buff));
         debug_log("do_read: ", strerror(-do_read("/dir2/dir1/file2", buff, sizeof(buff), 0)), ": ", buff);
-        debug_log("do_unlink: ", strerror(-do_unlink("/dir1/file2")));
+        // debug_log("do_unlink: ", strerror(-do_unlink("/dir1/file2")));
 
         dentries.clear();
         do_readdir("/dir2/dir1", dentries);
         debug_log(dentries);
+        do_rmdir("/dir2");
+
+        dentries.clear();
+        debug_log("do_readdir: ", strerror(-do_readdir("/dir1", dentries)));
+        debug_log(dentries);
+
+        std::memset(buff, 0, sizeof(buff));
+        debug_log("do_read: ", strerror(-do_read("/dir1/file2", buff, sizeof(buff), 0)), ": ", buff);
 
         do_destroy();
     } catch (const std::exception &e) {

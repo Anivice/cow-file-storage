@@ -191,6 +191,9 @@ uint64_t filesystem::unblocked_write_block(const uint64_t data_field_block_id, c
         std::vector<uint8_t> old_block_data;
         old_block_data.resize(block_manager->block_size);
         data_block->get(old_block_data.data(), block_manager->block_size, 0);
+
+        auto new_attr = block_manager->get_attr(new_block);
+
         new_cow->update(old_block_data.data(), block_manager->block_size, 0);
         auto old_attr = block_manager->get_attr(data_field_block_id);
         old_attr.type_backup = old_attr.type;
@@ -203,9 +206,8 @@ uint64_t filesystem::unblocked_write_block(const uint64_t data_field_block_id, c
     }
 }
 
-void filesystem::delink_block(uint64_t data_field_block_id)
+void filesystem::unblocked_delink_block(const uint64_t data_field_block_id)
 {
-    std::lock_guard<std::mutex> lock(mutex);
     const auto old_attr = block_manager->get_attr(data_field_block_id);
     auto new_attr = old_attr;
     if (new_attr.links > 0) new_attr.links -= 1;
@@ -213,6 +215,12 @@ void filesystem::delink_block(uint64_t data_field_block_id)
         data_field_block_id, cfs_blk_attr_t_to_uint16(old_attr), cfs_blk_attr_t_to_uint16(new_attr))
     block_manager->set_attr(data_field_block_id, new_attr);
     ACTION_END(actions::ACTION_TRANSACTION_MODIFY_BLOCK_ATTRIBUTES)
+}
+
+void filesystem::delink_block(const uint64_t data_field_block_id)
+{
+    std::lock_guard<std::mutex> lock(mutex);
+    unblocked_delink_block(data_field_block_id);
 }
 
 void filesystem::revert_transaction()
@@ -400,7 +408,7 @@ void filesystem::freeze_block()
 {
     std::lock_guard<std::mutex> lock(mutex);
     ACTION_START_NO_ARGS(actions::ACTION_FREEZE_BLOCK)
-    for (uint64_t i = 1; i < block_manager->blk_count; i++)
+    for (uint64_t i = 1; i < block_manager->blk_count; i++) // 0 not freezable
     {
         if (block_manager->block_allocated(i))
         {
@@ -417,7 +425,6 @@ void filesystem::freeze_block()
 
 void filesystem::clear_frozen_all()
 {
-    std::lock_guard<std::mutex> lock(mutex);
     ACTION_START_NO_ARGS(actions::ACTION_CLEAR_FROZEN_BLOCK_ALL)
     for (uint64_t i = 0; i < block_manager->blk_count; i++)
     {
@@ -432,4 +439,30 @@ void filesystem::clear_frozen_all()
         }
     }
     ACTION_END(actions::ACTION_CLEAR_FROZEN_BLOCK_ALL)
+}
+
+void filesystem::sync()
+{
+    std::lock_guard lock(mutex);
+    block_io->sync();
+}
+
+uint64_t filesystem::free_space()
+{
+    std::lock_guard lock(mutex);
+    return block_manager->free_blocks() * block_manager->block_size;
+}
+
+void filesystem::release_all_frozen_blocks()
+{
+    std::lock_guard lock(mutex);
+    for (uint64_t i = 0; i < block_manager->blk_count; i++)
+    {
+        if (block_manager->block_allocated(i)) {
+            if (const auto attr = block_manager->get_attr(i); attr.frozen > 0) {
+                unblocked_delink_block(i);
+            }
+        }
+    }
+    clear_frozen_all();
 }

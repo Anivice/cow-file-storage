@@ -184,9 +184,9 @@ int fsck_main(int argc, char **argv)
                         auto attr = block_attr.get(i);
                         const auto blk_attr = *reinterpret_cast<cfs_blk_attr_t*>(&attr);
                         switch (blk_attr.type) {
-                            case INDEX_TYPE: std::cout << color::color(0,4,0) << (blk_attr.frozen ? color::bg_color(3,0,0) : "") << 'I'; break;
-                            case STORAGE_TYPE: std::cout << color::color(5,5,1) << (blk_attr.frozen ? color::bg_color(3,0,0) : "") << 'S'; break;
-                            case POINTER_TYPE: std::cout << color::color(0,3,5) << (blk_attr.frozen ? color::bg_color(3,0,0) : "") << 'P'; break;
+                            case INDEX_TYPE:   std::cout << color::color(0,4,0) << (blk_attr.frozen ? color::bg_color(3,0,0) : "") << i << 'I' << blk_attr.links; break;
+                            case STORAGE_TYPE: std::cout << color::color(5,5,1) << (blk_attr.frozen ? color::bg_color(3,0,0) : "") << i << 'S' << blk_attr.links; break;
+                            case POINTER_TYPE: std::cout << color::color(0,3,5) << (blk_attr.frozen ? color::bg_color(3,0,0) : "") << i << 'P' << blk_attr.links; break;
                             default: std::cout << color::color(1,0,1) << (blk_attr.frozen ? color::bg_color(5,0,0) : "") << 'R'; break;
                         }
                         std::cout << color::no_color();

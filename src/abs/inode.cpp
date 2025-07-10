@@ -324,8 +324,11 @@ void filesystem::inode_t::redirect_3rd_level_block(const uint64_t old_data_field
             // 2. copy data over
             save_pointer_to_block(new_block, data);
 
+            // 3. unlink old block
+            fs.delink_block(pointer);
+
             debug_log("Redirecting immune block pointer ", pointer, " to new pointer block ", new_block);
-            // 3. update parent
+            // 4. update parent
             pointer = new_block;
             return true;
         }
@@ -350,7 +353,9 @@ void filesystem::inode_t::redirect_3rd_level_block(const uint64_t old_data_field
                     {
                         if (lv3_blk != 0 && lv3_blk == old_data_field_block_id)
                         {
+                            // redirect means the original block will lose one inode link
                             lv3_blk = new_data_field_block_id;
+                            fs.delink_block(lv3_blk);
                             found = true;
                             debug_log("Redirect block pointer from ", old_data_field_block_id, " to ", new_data_field_block_id);
                             break;

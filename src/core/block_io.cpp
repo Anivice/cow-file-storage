@@ -98,6 +98,8 @@ block_io_t::block_data_t & block_io_t::unblocked_at(const uint64_t index)
         auto & ret = *block_cache.at(index);
         if (index == 0 || index == cfs_head.static_info.blocks - 1) {
             ret->read_only = true;
+        } else {
+            ret->read_only = false;
         }
 
         if (read_only_fs) ret->read_only = true;
@@ -139,6 +141,8 @@ block_io_t::block_data_t & block_io_t::unblocked_at(const uint64_t index)
 
     if (index == 0 || index == cfs_head.static_info.blocks - 1) {
         block_data->read_only = true;
+    } else {
+        block_data->read_only = false;
     }
 
     if (read_only_fs) block_data->read_only = true;
@@ -163,7 +167,10 @@ void block_io_t::block_data_t::get(uint8_t *buf, const size_t sz, const uint64_t
 void block_io_t::block_data_t::update(const uint8_t * new_data, const size_t new_size, const uint64_t in_block_offset)
 {
     std::lock_guard<std::mutex> lock(mutex);
-    assert_short(!read_only);
+    if(read_only) {
+        throw runtime_error("Read-only block " +
+            std::to_string(this->block_sector_end / (this->block_sector_end - this->block_sector_start + 1)));
+    }
     assert_short(in_block_offset + new_size <= data_.size());
     std::memcpy(data_.data() + in_block_offset, new_data, new_size);
     out_of_sync = true;

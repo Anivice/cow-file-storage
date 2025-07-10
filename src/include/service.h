@@ -117,6 +117,7 @@ class filesystem
     void clear_frozen_all();
     void revert_transaction();
     void delink_block(uint64_t data_field_block_id);
+    void unblocked_delink_block(uint64_t data_field_block_id);
 
 public:
     class inode_t
@@ -251,28 +252,18 @@ public:
     requires (std::is_same_v<InodeType, directory_t> || std::is_same_v<InodeType, inode_t> || std::is_same_v<InodeType, file_t>)
     InodeType make_inode(const uint64_t data_field_block_id)
     {
-        if (const auto attr = block_manager->get_attr(data_field_block_id); attr.type == INDEX_TYPE) {
-            return InodeType{*this, data_field_block_id, block_manager->block_size};
+        if (block_manager->block_allocated(data_field_block_id)) {
+            if (const auto attr = block_manager->get_attr(data_field_block_id); attr.type == INDEX_TYPE) {
+                return InodeType{*this, data_field_block_id, block_manager->block_size};
+            }
         }
 
-        throw runtime_error("Block is not an index");
+        throw runtime_error("Invalid block query " + std::to_string(data_field_block_id));
     }
 
-    void sync() {
-        std::lock_guard lock(mutex);
-        block_io->sync();
-    }
-
-    uint64_t free_space() {
-        std::lock_guard lock(mutex);
-        return block_manager->free_blocks() * block_manager->block_size;
-    }
-
-    void release_all_frozen_blocks() {
-        std::lock_guard lock(mutex);
-        clear_frozen_all();
-    }
-
+    void sync();
+    uint64_t free_space();
+    void release_all_frozen_blocks();
     explicit filesystem(const char * location);
     ~filesystem();
 };
