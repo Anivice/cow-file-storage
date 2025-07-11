@@ -46,21 +46,18 @@ int main(int argc, char **argv)
 
         verbose_log("Route literal is ", executable_route);
         if (executable_route == "mkfs.cfs") {
-            verbose_log("Route to mkfs.cfs");
             return mkfs_main(argc, argv);
         }
 
         if (executable_route == "mount.cfs") {
-            verbose_log("Route to mount.cfs");
             return mount_main(argc, argv);
         }
 
         if (executable_route == "fsck.cfs") {
-            verbose_log("Route to fsck.cfs");
             return fsck_main(argc, argv);
         }
 
-        verbose_log("Unknown route");
+        error_log("Unknown route");
         throw runtime_error("No meaningful route can be determined by literal " + executable_route);
     }
     catch (const std::exception & e)

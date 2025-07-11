@@ -19,10 +19,6 @@
 
 cmake_minimum_required(VERSION 3.30)
 
-if ("X${CMAKE_BUILD_TYPE}" STREQUAL "XDebug")
-    add_subdirectory(src/imgInTerm/)
-endif ()
-
 project(cfs CXX C)
 
 find_program(CCACHE_PROGRAM ccache)
@@ -30,6 +26,10 @@ if (NOT "${CCACHE_PROGRAM}" STREQUAL "CCACHE_PROGRAM-NOTFOUND")
     set(CMAKE_CXX_COMPILER_LAUNCHER "${CCACHE_PROGRAM}")
     set(CMAKE_C_COMPILER_LAUNCHER "${CCACHE_PROGRAM}")
     message(STATUS "Using ${CCACHE_PROGRAM}")
+endif ()
+
+if ("X${CMAKE_BUILD_TYPE}" STREQUAL "XDebug")
+    add_subdirectory(src/imgInTerm/)
 endif ()
 
 if ("X${CMAKE_BUILD_TYPE}" STREQUAL "XDebug")
@@ -211,8 +211,7 @@ add_custom_target(utils ALL
         DEPENDS cfs
 )
 
+add_executable(snapshot src/utils/snapshot.c)
+
 add_executable(pro src/main.cpp)
 target_link_libraries(pro PRIVATE core)
-
-#find_package(PkgConfig REQUIRED)
-#pkg_check_modules(FUSE3 REQUIRED IMPORTED_TARGET fuse3)

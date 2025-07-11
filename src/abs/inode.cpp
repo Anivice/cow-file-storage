@@ -686,22 +686,39 @@ void filesystem::directory_t::unlink_inode(const std::string & name)
 void filesystem::directory_t::snapshot(const std::string & name)
 {
     if (inode_id != 0) {
-        throw fs_error::operation_bot_permitted("");
+        throw fs_error::operation_bot_permitted("Creating snapshot on non-root inode");
     }
 
-    auto new_snapshot_vol = create_dentry(name, S_IFDIR | 0755);
-    auto dentries = list_dentries();
-    auto new_root = fs.make_inode<directory_t>(dentries.at(name));
-    dentries.erase(name);
-    new_root.save_dentries(dentries);
+    auto fs_header = fs.block_manager->get_header();
+    if (fs_header.runtime_info.snapshot_number >= 127) {
+        throw fs_error::operation_bot_permitted("Max snapshot volume number reached");
+    }
 
-    // set volume root
-    auto new_snapshot_vol_attr = fs.get_attr(new_snapshot_vol.get_header().attributes.st_ino);
+    // create a new root
+    auto new_snapshot_vol = create_dentry(name, S_IFDIR | 0555);
+    auto [ new_root_inode_header ] = new_snapshot_vol.get_header();
+    const auto new_root_inode_id = new_root_inode_header.st_ino;
+    auto new_root = fs.make_inode<directory_t>(new_root_inode_id);
+
+    // copy over
+    std::vector<uint8_t> old_inode_data;
+    old_inode_data.resize(block_size);
+    fs.read_block(0, old_inode_data.data(), block_size, 0);
+    fs.write_block(new_root_inode_id, old_inode_data.data(), block_size, 0);
+
+    // update volume root inode header with proper info
+    auto [ old_root_inode_header ] = this->get_header();
+    new_root_inode_header = old_root_inode_header;
+    new_root_inode_header.st_ino = new_root_inode_id;
+    new_root_inode_header.st_mode &= 0xFFFFFF6D; // strip write attributes
+    new_root.save_header(inode_header_t{ .attributes = new_root_inode_header });
+
+    // set new root block attributes
+    auto new_snapshot_vol_attr = fs.get_attr(new_root_inode_id);
     new_snapshot_vol_attr.frozen = 2;
-    fs.set_attr(new_snapshot_vol.get_header().attributes.st_ino, new_snapshot_vol_attr);
+    fs.set_attr(new_root_inode_id, new_snapshot_vol_attr);
 
     // update filesystem header
-    auto fs_header = fs.block_manager->get_header();
     fs_header.runtime_info.snapshot_number++;
     fs_header.runtime_info.snapshot_number_dup = fs_header.runtime_info.snapshot_number_dup2 = fs_header.runtime_info.snapshot_number_dup3;
     fs.block_io->update_runtime_info(fs_header);

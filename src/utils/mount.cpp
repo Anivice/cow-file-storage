@@ -22,10 +22,15 @@
 #include <fuse.h>
 #include <atomic>
 #include <algorithm>
+#include <sys/ioctl.h>
+#include "service.h"
 #include "helper/log.h"
 #include "helper/arg_parser.h"
 #include "helper/color.h"
 #include "operations.h"
+
+extern "C" struct snapshot_ioctl_msg { char snapshot_name [CFS_MAX_FILENAME_LENGTH]; };
+#define CFS_PUSH_SNAPSHOT _IOW('M', 0x42, struct snapshot_ioctl_msg)
 
 namespace mount {
     static std::string filesystem_path;
@@ -123,8 +128,20 @@ namespace mount {
         return do_symlink(path, target);
     }
 
-    static int fuse_do_link (const char * path, const char * name) {
-        return do_link(path, name);
+    static int fuse_do_ioctl (const char *, const int cmd, void *,
+        fuse_file_info *, const unsigned int flags, void * data)
+    {
+        if (!(flags & FUSE_IOCTL_DIR)) {
+            return -ENOTTY;
+        }
+
+        if (cmd == CFS_PUSH_SNAPSHOT)
+        {
+            const auto * msg = static_cast<snapshot_ioctl_msg *>(data);
+            return do_snapshot(msg->snapshot_name);
+        }
+
+        return -EINVAL;
     }
 
     static int fuse_do_rename (const char * path, const char * name) {
@@ -153,8 +170,7 @@ namespace mount {
 
     void* fuse_do_init (fuse_conn_info *conn)
     {
-        conn->capable = FUSE_CAP_BIG_WRITES;
-        do_init(filesystem_path);
+        conn->want |= FUSE_CAP_BIG_WRITES | FUSE_CAP_IOCTL_DIR;
         return nullptr;
     }
 
@@ -178,7 +194,6 @@ namespace mount {
         .rmdir      = fuse_do_rmdir,
         .symlink    = fuse_do_symlink,
         .rename     = fuse_do_rename,
-        .link       = fuse_do_link,     // snapshot operation is wrapped to here
         .chmod      = fuse_do_chmod,
         .chown      = fuse_do_chown,
         .truncate   = fuse_do_truncate,
@@ -200,6 +215,7 @@ namespace mount {
         .ftruncate  = fuse_do_ftruncate,
         .fgetattr   = fuse_do_fgetattr,
         .utimens    = fuse_do_utimens,
+        .ioctl      = fuse_do_ioctl,
         .fallocate  = fuse_do_fallocate,
     };
 
@@ -264,6 +280,7 @@ int fuse_redirect(const int argc, char ** argv)
         return EXIT_FAILURE;
     }
 
+    do_init(mount::filesystem_path);
     const int ret = fuse_main(args.argc, args.argv, &mount::fuse_operation_vector_table, nullptr);
     fuse_opt_free_args(&args);
     return ret;

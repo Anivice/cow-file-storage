@@ -28,7 +28,6 @@
 #include "service.h"
 #include "helper/log.h"
 #include "core/blk_manager.h"
-#include "helper/cpp_assert.h"
 #if DEBUG
 # include "helper/err_type.h"
 #endif
@@ -150,7 +149,7 @@ public:
             bool newly_created = false;
 
             void safe_delete(uint64_t & block_id);
-            uint64_t mkblk(const bool storage = false);
+            uint64_t mkblk(bool storage = false);
 
             explicit level3(const uint64_t data_field_block_id,
                 filesystem & fs,

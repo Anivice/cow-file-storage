@@ -6,6 +6,8 @@
 #include "operations.h"
 #include "service.h"
 #include "helper/log.h"
+#include "helper/cpp_assert.h"
+
 std::unique_ptr < filesystem > filesystem_instance;
 std::mutex operations_mutex;
 
@@ -373,7 +375,7 @@ int do_symlink (const char * path, const char * target)
     CATCH_TAIL
 }
 
-int do_link(const char *, const char * name)
+int do_snapshot(const char * name)
 {
     try {
         debug_log("Snapshot creation request, target at ", name);
@@ -387,6 +389,7 @@ int do_link(const char *, const char * name)
         filesystem_instance->sync();
         auto root = get_inode_by_path<filesystem::directory_t>({});
         root.snapshot(target);
+        filesystem_instance->sync();
         debug_log("Snapshot creation completed for ", name);
         return 0;
     } CATCH_TAIL
