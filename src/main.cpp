@@ -4,7 +4,7 @@
 
 extern std::unique_ptr < filesystem > filesystem_instance;
 
-int main(int argc, char *argv[])
+int main(int, char *[])
 {
     try {
         do_init("./file");

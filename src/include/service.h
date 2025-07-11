@@ -23,9 +23,10 @@
 
 #include <filesystem>
 #include <memory>
-#include <service.h>
-#include <helper/log.h>
 #include <sys/stat.h>
+#include <sys/statvfs.h>
+#include "service.h"
+#include "helper/log.h"
 #include "core/blk_manager.h"
 #include "helper/cpp_assert.h"
 #if DEBUG
@@ -262,7 +263,7 @@ public:
     }
 
     void sync();
-    uint64_t free_space();
+    struct statvfs fstat();
     void release_all_frozen_blocks();
     explicit filesystem(const char * location);
     ~filesystem();

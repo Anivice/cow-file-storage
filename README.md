@@ -31,13 +31,13 @@ Different TODOs goes here
  - [x] Block Copy-on-Write
  - [x] Inode
  - [x] Filesystem Basic Operations
- - [ ] Filesystem Snapshot Operations
- - [ ] Filesystem Integrity Insurance
+ - [x] Filesystem Snapshot Operations
+ - [ ] Filesystem Crash Recovery
  - [ ] FUSE Implementation
  - [ ] Robustness Test Results
 
 ## Used Public Repositories (Embedded in Source Files)
  * [CImg](https://github.com/GreycLab/CImg) Dependency for Terminal Image Viewer
  * [libpng](https://github.com/pnggroup/libpng) Dependency for Terminal Image Viewer
- * [Terminal Image Viewer](https://github.com/stefanhaustein/TerminalImageViewer.git) Display png files in terminal
+ * [Terminal Image Viewer](https://github.com/stefanhaustein/TerminalImageViewer.git) Display png files in the terminal
  * [LZ4](https://github.com/lz4/lz4) LZ4 compression

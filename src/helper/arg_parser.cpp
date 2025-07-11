@@ -95,10 +95,9 @@ arg_parser::arg_parser(const int argc, char ** argv, const parameter_vector & pa
     std::map <std::string, std::string> non_bare_args;
     for (int i = 1; i < argc; ++i)
     {
-        if (const std::string arg = argv[i];
-            is_param(arg) && bare.empty())
+        if (const std::string arg = argv[i]; bare.empty())
         {
-            if (current_arg.empty())
+            if (current_arg.empty() && is_param(arg))
             {
                 const char short_name = get_short_name(arg);
                 const std::string long_name = get_long_name(arg);
@@ -111,19 +110,19 @@ arg_parser::arg_parser(const int argc, char ** argv, const parameter_vector & pa
                     non_bare_args.emplace(param_info.name, "");
                 }
             }
-            else
+            else if (!current_arg.empty())
             {
-                throw runtime_error("Parameter `" + current_arg + "` needs an argument");
+                non_bare_args.emplace(current_arg, arg);
+                current_arg.clear();
+            }
+            else // not an argument, no preceding args can be assumed as a value to a key, can only be treated as bare
+            {
+                bare.push_back(arg);
             }
         }
         else if (current_arg.empty())
         {
             bare.push_back(arg);
-        }
-        else
-        {
-            non_bare_args.emplace(current_arg, arg);
-            current_arg.clear();
         }
     }
 

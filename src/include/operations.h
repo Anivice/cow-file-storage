@@ -9,6 +9,7 @@
 int do_getattr (const char *path, struct stat *stbuf);
 int do_readdir (const char *path, std::vector < std::string > & entries);
 int do_mkdir (const char * path, mode_t mode);
+int do_chown (const char * path, uid_t uid, gid_t gid);
 int do_chmod (const char * path, mode_t mode);
 int do_create (const char * path, mode_t mode);
 int do_flush (const char * path);
@@ -33,6 +34,6 @@ int do_readlink (const char * path, char * buffer, size_t size);
 void do_destroy ();
 void do_init(const std::string & location);
 int do_mknod (const char * path, mode_t mode, dev_t device);
-uint64_t free_space();
+struct statvfs do_fstat();
 
 #endif //OPERATIONS_H

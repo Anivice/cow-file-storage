@@ -9,7 +9,7 @@
 std::unique_ptr < filesystem > filesystem_instance;
 std::mutex operations_mutex;
 
-std::vector<std::string> splitString(const std::string& s, const char delim = '/')
+static std::vector<std::string> splitString(const std::string& s, const char delim = '/')
 {
     std::vector<std::string> parts;
     std::string token;
@@ -38,16 +38,20 @@ template < typename InodeType >
 }
 
 #define CATCH_TAIL                                                                  \
-    catch (fs_error::no_such_file_or_directory &) {                                 \
+    catch (fs_error::no_such_file_or_directory & e) {                               \
+        error_log("Unhandled exception: ", e.what());                               \
         return -ENOENT;                                                             \
-    } catch (fs_error::not_a_directory &) {                                         \
+    } catch (fs_error::not_a_directory & e) {                                       \
+        error_log("Unhandled exception: ", e.what());                               \
         return -ENOTDIR;                                                            \
-    } catch (fs_error::filesystem_space_depleted &) {                               \
+    } catch (fs_error::filesystem_space_depleted & e) {                             \
+        error_log("Unhandled exception: ", e.what());                               \
         return -ENOSPC;                                                             \
     } catch (std::exception &e) {                                                   \
         error_log("Unhandled exception: ", e.what());                               \
         return -EIO;                                                                \
     } catch (...) {                                                                 \
+        error_log("Unhandled exception");                                           \
         return -EIO;                                                                \
     }
 
@@ -197,12 +201,7 @@ int do_open (const char * path)
 {
     try {
         std::lock_guard lock(operations_mutex);
-        auto inode = get_inode_by_path<filesystem::inode_t>(splitString(path));
-        if (const auto [attributes] = inode.get_header();
-            attributes.st_mode & S_IFDIR)
-        {
-            return -EISDIR;
-        }
+        (void)get_inode_by_path<filesystem::inode_t>(splitString(path));
         return 0;
     }
     CATCH_TAIL
@@ -213,8 +212,7 @@ int do_read (const char *path, char *buffer, const size_t size, const off_t offs
     try {
         std::lock_guard lock(operations_mutex);
         auto inode = get_inode_by_path<filesystem::inode_t>(splitString(path));
-        inode.read(buffer, size, offset);
-        return 0;
+        return static_cast<int>(inode.read(buffer, size, offset));
     }
     CATCH_TAIL
 }
@@ -230,8 +228,7 @@ int do_write (const char * path, const char * buffer, const size_t size, const o
         {
             inode.resize(size + offset);
         }
-        inode.write(buffer, size, offset);
-        return 0;
+        return static_cast<int>(inode.write(buffer, size, offset));
     }
     CATCH_TAIL
 }
@@ -308,7 +305,7 @@ int do_rmdir (const char * path)
         }
         else
         {
-            if (inode.get_header().attributes.st_size != 0) {
+            if (child_inode.get_header().attributes.st_size != 0) {
                 return -ENOTEMPTY;
             }
             inode.unlink_inode(target);
@@ -504,6 +501,7 @@ int do_mknod (const char * path, const mode_t mode, const dev_t device)
     CATCH_TAIL;
 }
 
-uint64_t free_space() {
-    return filesystem_instance->free_space();
+struct statvfs do_fstat()
+{
+    return filesystem_instance->fstat();
 }

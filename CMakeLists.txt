@@ -82,17 +82,17 @@ if ("X${CMAKE_BUILD_TYPE}" STREQUAL "XDebug")
             -Wl,-z,relro -Wl,-z,now
     )
 
-#    list(APPEND compiler_options
-#            -fsanitize=address
-#            -fsanitize=undefined
-#    )
-#
-#    list(APPEND linker_options
-#            -fsanitize=address
-#            -fsanitize=undefined
-#            -lasan
-#            -lubsan
-#    )
+    list(APPEND compiler_options
+            -fsanitize=address
+            -fsanitize=undefined
+    )
+
+    list(APPEND linker_options
+            -fsanitize=address
+            -fsanitize=undefined
+            -lasan
+            -lubsan
+    )
 
 #    list(APPEND compiler_options
 #            -fsanitize=thread
@@ -149,13 +149,13 @@ endif ()
 set(CMAKE_CXX_STANDARD 23)
 
 # Add libfuse
-#include(FindPkgConfig)
-#find_package(PkgConfig REQUIRED)
-#pkg_check_modules(LIBFUSE REQUIRED fuse)
-#add_compile_definitions("_FILE_OFFSET_BITS=64")
-#include_directories(${LIBFUSE_INCLUDE_DIRS})
-#add_compile_options(${LIBFUSE_CFLAGS_OTHER})
-#link_libraries(${LIBFUSE_LIBRARIES})
+include(FindPkgConfig)
+find_package(PkgConfig REQUIRED)
+pkg_check_modules(LIBFUSE REQUIRED fuse)
+add_compile_definitions("_FILE_OFFSET_BITS=64")
+include_directories(${LIBFUSE_INCLUDE_DIRS})
+add_compile_options(${LIBFUSE_CFLAGS_OTHER})
+link_libraries(${LIBFUSE_LIBRARIES})
 
 include_directories(src/include)
 add_compile_definitions(CORE_VERSION="0.0.1")

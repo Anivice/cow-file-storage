@@ -18,15 +18,186 @@
  * SPDX-License-Identifier: GPL-3.0-or-later
  */
 
+#define FUSE_USE_VERSION 31
+#include <fuse.h>
 #include <atomic>
 #include <algorithm>
 #include "helper/log.h"
 #include "helper/arg_parser.h"
 #include "helper/color.h"
-#include "helper/get_env.h"
 #include "operations.h"
 
 namespace mount {
+    static std::string filesystem_path;
+    static std::string filesystem_mount_destination;
+
+    static int fuse_do_getattr (const char *path, struct stat *stbuf)
+    {
+        return do_getattr(path, stbuf);
+    }
+
+    static int fuse_do_readdir (const char *path,
+                    void *buffer,
+                    const fuse_fill_dir_t filler,
+                    off_t,
+                    fuse_file_info *)
+    {
+        std::vector<std::string> vector_buffer;
+        const int status = do_readdir(path, vector_buffer);
+        if (status != 0) return status;
+        for (const auto & name : vector_buffer) {
+            filler(buffer, name.c_str(), nullptr, 0);
+        }
+        return status;
+    }
+
+    static int fuse_do_mkdir (const char * path, const mode_t mode) {
+        return do_mkdir(path, mode);
+    }
+
+    static int fuse_do_chmod (const char * path, const mode_t mode) {
+        return do_chmod(path, mode);
+    }
+
+    static int fuse_do_chown (const char * path, const uid_t uid, const gid_t gid) {
+        return do_chown(path, uid, gid);
+    }
+
+    static int fuse_do_create (const char * path, const mode_t mode, fuse_file_info *) {
+        return do_create(path, mode);
+    }
+
+    static int fuse_do_flush (const char * path, fuse_file_info *) {
+        return do_flush(path);
+    }
+
+    static int fuse_do_release (const char * path, fuse_file_info *) {
+        return do_release(path);
+    }
+
+    static int fuse_do_access (const char * path, const int mode) {
+        return do_access(path, mode);
+    }
+
+    static int fuse_do_open (const char * path, fuse_file_info *) {
+        return do_open(path);
+    }
+
+    static int fuse_do_read (const char *path, char *buffer, const size_t size, const off_t offset, fuse_file_info *) {
+        return do_read(path, buffer, size, offset);
+    }
+
+    static int fuse_do_write (const char * path, const char * buffer, const size_t size, const off_t offset, fuse_file_info *) {
+        return do_write(path, buffer, size, offset);
+    }
+
+    static int fuse_do_utimens (const char * path, const timespec tv[2]) {
+        return do_utimens(path, tv);
+    }
+
+    static int fuse_do_unlink (const char * path) {
+        return do_unlink(path);
+    }
+
+    static int fuse_do_rmdir (const char * path) {
+        return do_rmdir(path);
+    }
+
+    static int fuse_do_fsync (const char * path, int, fuse_file_info *) {
+        return do_fsync(path, 0);
+    }
+
+    static int fuse_do_releasedir (const char * path, fuse_file_info *) {
+        return do_releasedir(path);
+    }
+
+    static int fuse_do_fsyncdir (const char * path, int, fuse_file_info *) {
+        return do_fsyncdir(path, 0);
+    }
+
+    static int fuse_do_truncate (const char * path, const off_t size) {
+        return do_truncate(path, size);
+    }
+
+    static int fuse_do_symlink (const char * path, const char * target) {
+        return do_symlink(path, target);
+    }
+
+    static int fuse_do_rename (const char * path, const char * name) {
+        return do_rename(path, name);
+    }
+
+    static int fuse_do_fallocate(const char * path, const int mode, const off_t offset, const off_t length, fuse_file_info *) {
+        return do_fallocate(path, mode, offset, length);
+    }
+
+    static int fuse_do_fgetattr (const char * path, struct stat * statbuf, fuse_file_info *) {
+        return fuse_do_getattr(path, statbuf);
+    }
+
+    static int fuse_do_ftruncate (const char * path, const off_t length, fuse_file_info *) {
+        return fuse_do_truncate(path, length);
+    }
+
+    static int fuse_do_readlink (const char * path, char * buffer, const size_t size) {
+        return do_readlink(path, buffer, size);
+    }
+
+    void fuse_do_destroy (void *) {
+        do_destroy();
+    }
+
+    void* fuse_do_init (fuse_conn_info *conn)
+    {
+        conn->capable = 0;
+        do_init(filesystem_path);
+        return nullptr;
+    }
+
+    static int fuse_do_mknod (const char * path, const mode_t mode, const dev_t device) {
+        return do_mknod(path, mode, device);
+    }
+
+    int fuse_statfs (const char *, struct statvfs * status)
+    {
+        *status = do_fstat();
+        return 0;
+    }
+
+    static fuse_operations fuse_operation_vector_table =
+    {
+        .getattr    = fuse_do_getattr,
+        .readlink   = fuse_do_readlink,
+        .mknod      = fuse_do_mknod,
+        .mkdir      = fuse_do_mkdir,
+        .unlink     = fuse_do_unlink,
+        .rmdir      = fuse_do_rmdir,
+        .symlink    = fuse_do_symlink,
+        .rename     = fuse_do_rename,
+        .chmod      = fuse_do_chmod,
+        .chown      = fuse_do_chown,
+        .truncate   = fuse_do_truncate,
+        .open       = fuse_do_open,
+        .read       = fuse_do_read,
+        .write      = fuse_do_write,
+        .statfs     = fuse_statfs,
+        .flush      = fuse_do_flush,
+        .release    = fuse_do_release,
+        .fsync      = fuse_do_fsync,
+        .opendir    = fuse_do_open,
+        .readdir    = fuse_do_readdir,
+        .releasedir = fuse_do_releasedir,
+        .fsyncdir   = fuse_do_fsyncdir,
+        .init       = fuse_do_init,
+        .destroy    = fuse_do_destroy,
+        .access     = fuse_do_access,
+        .create     = fuse_do_create,
+        .ftruncate  = fuse_do_ftruncate,
+        .fgetattr   = fuse_do_fgetattr,
+        .utimens    = fuse_do_utimens,
+        .fallocate  = fuse_do_fallocate,
+    };
+
     const arg_parser::parameter_vector Arguments = {
         { .name = "help",       .short_name = 'h', .arg_required = false,   .description = "Prints this help message" },
         { .name = "version",    .short_name = 'v', .arg_required = false,   .description = "Prints version" },
@@ -63,6 +234,34 @@ namespace mount {
                       << color::color(4,5,1) << description << color::no_color() << std::endl;
         }
     }
+
+    static std::vector<std::string> splitString(const std::string& s, const char delim = ' ')
+    {
+        std::vector<std::string> parts;
+        std::string token;
+        std::stringstream ss(s);
+
+        while (std::getline(ss, token, delim)) {
+            parts.push_back(token);
+        }
+
+        return parts;
+    }
+}
+
+int fuse_redirect(const int argc, char ** argv)
+{
+    fuse_args args = FUSE_ARGS_INIT(argc, argv);
+    if (fuse_opt_parse(&args, nullptr, nullptr, nullptr) == -1)
+    {
+        std::cerr << "FUSE initialization failed, errno: "
+                  << strerror(errno) << " (" << errno << ")" << std::endl;
+        return EXIT_FAILURE;
+    }
+
+    const int ret = fuse_main(args.argc, args.argv, &mount::fuse_operation_vector_table, nullptr);
+    fuse_opt_free_args(&args);
+    return ret;
 }
 
 int mount_main(int argc, char **argv)
@@ -106,12 +305,46 @@ int mount_main(int argc, char **argv)
         }
 
         ////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+        std::unique_ptr<char*[]> fuse_argv;
+        contains("fuse", arg_val);
+        std::vector<std::string> fuse_args = mount::splitString(arg_val, ' ');
+        if constexpr (DEBUG) {
+            // fuse_args.emplace_back("-s");
+            fuse_args.emplace_back("-d");
+            fuse_args.emplace_back("-f");
+        }
+
+        std::vector<std::string> bares;
+        for (const auto & [key, val] : args) {
+            if (key.empty()) {
+                bares.emplace_back(val);
+            }
+        }
+
+        if (bares.size() != 2) {
+            throw std::invalid_argument("Invalid arguments");
+        }
+
+        mount::filesystem_path = bares[0];
+        mount::filesystem_mount_destination = bares[1];
+        fuse_args.push_back(mount::filesystem_mount_destination);
+
+        fuse_argv = std::make_unique<char*[]>(fuse_args.size() + 1);
+        fuse_argv[0] = argv[0]; // redirect
+        for (int i = 0; i < static_cast<int>(fuse_args.size()); ++i) {
+            fuse_argv[i + 1] = const_cast<char *>(fuse_args[i].c_str());
+        }
+
+        debug_log("Mounting filesystem ", mount::filesystem_path, " to ", mount::filesystem_mount_destination);
+        debug_log("Arguments passed down to fuse from command line are: ", fuse_args);
+
+        const int d_fuse_argc = static_cast<int>(fuse_args.size()) + 1;
+        char ** d_fuse_argv = fuse_argv.get();
+        return fuse_redirect(d_fuse_argc, d_fuse_argv);
     }
     catch (const std::exception & e)
     {
         error_log(e.what());
         return EXIT_FAILURE;
     }
-
-    return EXIT_SUCCESS;
 }

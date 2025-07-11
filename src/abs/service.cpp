@@ -191,9 +191,6 @@ uint64_t filesystem::unblocked_write_block(const uint64_t data_field_block_id, c
         std::vector<uint8_t> old_block_data;
         old_block_data.resize(block_manager->block_size);
         data_block->get(old_block_data.data(), block_manager->block_size, 0);
-
-        auto new_attr = block_manager->get_attr(new_block);
-
         new_cow->update(old_block_data.data(), block_manager->block_size, 0);
         auto old_attr = block_manager->get_attr(data_field_block_id);
         old_attr.type_backup = old_attr.type;
@@ -447,10 +444,26 @@ void filesystem::sync()
     block_io->sync();
 }
 
-uint64_t filesystem::free_space()
+struct statvfs filesystem::fstat()
 {
     std::lock_guard lock(mutex);
-    return block_manager->free_blocks() * block_manager->block_size;
+    const auto free = block_manager->free_blocks();
+    const struct statvfs ret = {
+        .f_bsize = block_manager->block_size,
+        .f_frsize = block_manager->block_size,
+        .f_blocks = block_manager->blk_count,
+        .f_bfree = free,
+        .f_bavail = free,
+        .f_files = 0,
+        .f_ffree = 0,
+        .f_favail = 0,
+        .f_fsid = 0,
+        .f_flag = 0,
+        .f_namemax = CFS_MAX_FILENAME_LENGTH - 1,
+        .f_type = 0x65735546 // FUSE
+    };
+
+    return ret;
 }
 
 void filesystem::release_all_frozen_blocks()
