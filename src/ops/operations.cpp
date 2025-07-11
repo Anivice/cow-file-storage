@@ -178,7 +178,7 @@ int do_access (const char * path, int mode)
     try {
         std::lock_guard lock(operations_mutex);
         auto inode = get_inode_by_path<filesystem::inode_t>(splitString(path));
-        const auto fstat = inode.get_header().attributes;
+        auto fstat = inode.get_header().attributes;
 
         if (mode == F_OK)
         {
@@ -187,10 +187,9 @@ int do_access (const char * path, int mode)
 
         // permission check:
         mode <<= 6;
+        mode &= 0x01C0;
         if (inode.get_inode_blk_attr().frozen) {
-            mode &= 0x0140;
-        } else {
-            mode &= 0x01C0;
+            fstat.st_mode &= 0500; // strip write permission
         }
         return -!(mode & fstat.st_mode);
     }
@@ -367,62 +366,65 @@ int do_symlink (const char * path, const char * target)
         auto inode = get_inode_by_path<filesystem::directory_t>(path_vec);
         RETURN_EROFS_IF_INODE_IS_FROZEN(inode);
         auto new_inode = inode.create_dentry(target_link, S_IFLNK | 0755);
+        new_inode.resize(strlen(path));
         new_inode.write(path, strlen(path), 0);
         return 0;
     }
     CATCH_TAIL
 }
 
+int do_link(const char *, const char * name)
+{
+    try {
+        debug_log("Snapshot creation request, target at ", name);
+        auto target_parent = splitString(name);
+        const auto target = target_parent.back();
+        target_parent.pop_back();
+        if (!target_parent.empty()) {
+            error_log("Snapshot cannot be created under any location other than root!");
+            return -EPERM;
+        }
+        filesystem_instance->sync();
+        auto root = get_inode_by_path<filesystem::directory_t>({});
+        root.snapshot(target);
+        debug_log("Snapshot creation completed for ", name);
+        return 0;
+    } CATCH_TAIL
+}
+
 int do_rename (const char * path, const char * name)
 {
     try {
         std::lock_guard lock(operations_mutex);
-        if (std::string(path) != "/") {
-            auto source_parent = splitString(path);
-            const auto source = source_parent.back();
-            source_parent.pop_back();
+        auto source_parent = splitString(path);
+        const auto source = source_parent.back();
+        source_parent.pop_back();
 
-            auto target_parent = splitString(name);
-            const auto target = target_parent.back();
-            target_parent.pop_back();
+        auto target_parent = splitString(name);
+        const auto target = target_parent.back();
+        target_parent.pop_back();
 
-            auto source_parent_dir = get_inode_by_path<filesystem::directory_t>(source_parent);
-            auto target_parent_dir = get_inode_by_path<filesystem::directory_t>(target_parent);
+        auto source_parent_dir = get_inode_by_path<filesystem::directory_t>(source_parent);
+        auto target_parent_dir = get_inode_by_path<filesystem::directory_t>(target_parent);
 
-            RETURN_EROFS_IF_INODE_IS_FROZEN(source_parent_dir);
-            RETURN_EROFS_IF_INODE_IS_FROZEN(target_parent_dir);
+        RETURN_EROFS_IF_INODE_IS_FROZEN(source_parent_dir);
+        RETURN_EROFS_IF_INODE_IS_FROZEN(target_parent_dir);
 
-            auto src_dentries = source_parent_dir.list_dentries();
-            auto index_node_id = src_dentries.at(source);
-            auto target_inode = filesystem_instance->make_inode<filesystem::inode_t>(index_node_id);
-            RETURN_EROFS_IF_INODE_IS_FROZEN(target_inode);
+        auto src_dentries = source_parent_dir.list_dentries();
+        auto index_node_id = src_dentries.at(source);
+        auto target_inode = filesystem_instance->make_inode<filesystem::inode_t>(index_node_id);
+        RETURN_EROFS_IF_INODE_IS_FROZEN(target_inode);
 
-            src_dentries.erase(source);
-            source_parent_dir.save_dentries(src_dentries);
+        src_dentries.erase(source);
+        source_parent_dir.save_dentries(src_dentries);
 
-            auto target_dentries = target_parent_dir.list_dentries();
-            if (target_dentries.contains(target)) {
-                return -EEXIST;
-            }
-            target_dentries.emplace(target, index_node_id);
-            target_parent_dir.save_dentries(target_dentries);
-            return 0;
-        } else {
-            debug_log("Snapshot creation request, target at ", name);
-            auto target_parent = splitString(name);
-            const auto target = target_parent.back();
-            target_parent.pop_back();
-            if (!target_parent.empty()) {
-                error_log("Snapshot cannot be created under any location other than root!");
-                return -EPERM;
-            }
-
-            filesystem_instance->sync();
-            auto root = get_inode_by_path<filesystem::directory_t>({});
-            root.snapshot(target);
-            debug_log("Snapshot creation completed for ", name);
-            return 0;
+        auto target_dentries = target_parent_dir.list_dentries();
+        if (target_dentries.contains(target)) {
+            return -EEXIST;
         }
+        target_dentries.emplace(target, index_node_id);
+        target_parent_dir.save_dentries(target_dentries);
+        return 0;
     }
     CATCH_TAIL
 }
@@ -461,7 +463,8 @@ int do_readlink (const char * path, char * buffer, const size_t size)
         if (auto header = inode.get_header(); (header.attributes.st_mode & S_IFMT) == S_IFLNK) {
             header.attributes.st_atim = filesystem::inode_t::get_current_time();
             inode.save_header(header);
-            inode.read(buffer, size, 0);
+            const auto len = inode.read(buffer, size, 0);
+            buffer[std::min(len, size)] = '\0';
             return 0;
         }
 

@@ -123,6 +123,10 @@ namespace mount {
         return do_symlink(path, target);
     }
 
+    static int fuse_do_link (const char * path, const char * name) {
+        return do_link(path, name);
+    }
+
     static int fuse_do_rename (const char * path, const char * name) {
         return do_rename(path, name);
     }
@@ -149,7 +153,7 @@ namespace mount {
 
     void* fuse_do_init (fuse_conn_info *conn)
     {
-        conn->capable = 0;
+        conn->capable = FUSE_CAP_BIG_WRITES;
         do_init(filesystem_path);
         return nullptr;
     }
@@ -174,6 +178,7 @@ namespace mount {
         .rmdir      = fuse_do_rmdir,
         .symlink    = fuse_do_symlink,
         .rename     = fuse_do_rename,
+        .link       = fuse_do_link,     // snapshot operation is wrapped to here
         .chmod      = fuse_do_chmod,
         .chown      = fuse_do_chown,
         .truncate   = fuse_do_truncate,
