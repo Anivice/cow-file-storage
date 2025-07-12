@@ -32,8 +32,9 @@ Different TODOs goes here
  - [x] Inode
  - [x] Filesystem Basic Operations
  - [x] Filesystem Snapshot Operations
- - [ ] Filesystem Crash Recovery
- - [ ] FUSE Implementation
+ - [x] FUSE Implementation
+ - [x] Filesystem Reset (Snapshot Fast Recover)
+ - [ ] Filesystem Crash Recovery (FCRM, Filesystem Check and Repair on Mount)
  - [ ] Robustness Test Results
 
 ## Used Public Repositories (Embedded in Source Files)

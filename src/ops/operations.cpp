@@ -395,6 +395,25 @@ int do_snapshot(const char * name)
     } CATCH_TAIL
 }
 
+int do_rollback(const char * name)
+{
+    try {
+        debug_log("Snapshot rollback request, target at ", name);
+        auto target_parent = splitString(name);
+        const auto target = target_parent.back();
+        target_parent.pop_back();
+        if (!target_parent.empty()) {
+            error_log("Filesystem cannot be rolled back from any location other than under root!");
+            return -EPERM;
+        }
+        auto root = get_inode_by_path<filesystem::directory_t>({});
+        root.reset_as(target);
+        filesystem_instance->sync();
+        debug_log("Filesystem rollback completed, history inode is ", name);
+        return 0;
+    } CATCH_TAIL
+}
+
 int do_rename (const char * path, const char * name)
 {
     try {

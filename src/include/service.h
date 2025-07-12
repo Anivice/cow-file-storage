@@ -118,6 +118,7 @@ class filesystem
     void revert_transaction();
     void delink_block(uint64_t data_field_block_id);
     void unblocked_delink_block(uint64_t data_field_block_id);
+    void reset();
 
 public:
     class inode_t
@@ -242,6 +243,7 @@ public:
         uint64_t get_inode(const std::string & name);
         void unlink_inode(const std::string & name);
         void snapshot(const std::string & name);
+        void reset_as(const std::string & name);
     };
 
     std::unique_ptr < directory_t > get_root() {

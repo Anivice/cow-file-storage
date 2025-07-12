@@ -21,7 +21,7 @@ namespace actions {
         ACTION_REVERT_LAST_TRANSACTION,
         ACTION_FREEZE_BLOCK,
         ACTION_CLEAR_FROZEN_BLOCK_ALL,
-        ACTION_CLEAR_FROZEN_BLOCK_BUT_ONE,
+        ACTION_RESET_FROM_SNAPSHOT, // which inode
     };
 
     enum ActionErrors : uint64_t {

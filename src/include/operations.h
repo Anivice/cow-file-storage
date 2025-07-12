@@ -27,6 +27,7 @@ int do_fsyncdir (const char * path, int);
 int do_truncate (const char * path, off_t size);
 int do_symlink  (const char * path, const char * target);
 int do_snapshot(const char * name);
+int do_rollback(const char * name);
 int do_rename (const char * path, const char * name);
 int do_fallocate(const char * path, int mode, off_t offset, off_t length);
 int do_fgetattr (const char * path, struct stat * statbuf);

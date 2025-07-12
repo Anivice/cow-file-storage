@@ -1,6 +1,7 @@
 #include "service.h"
 #include "helper/log.h"
 #include "helper/err_type.h"
+#include "helper/cpp_assert.h"
 
 #define SIMPLE_OPERATION(exp, error)                        \
     try {                                                   \
@@ -122,6 +123,7 @@ uint64_t filesystem::unblocked_allocate_new_block()
 
 void filesystem::unblocked_deallocate_block(const uint64_t data_field_block_id)
 {
+    assert_short(data_field_block_id != 0);
     // check frozen status
     if (block_manager->get_attr(data_field_block_id).frozen) {
         return;
@@ -205,6 +207,7 @@ uint64_t filesystem::unblocked_write_block(const uint64_t data_field_block_id, c
 
 void filesystem::unblocked_delink_block(const uint64_t data_field_block_id)
 {
+    assert_short(data_field_block_id != 0);
     const auto old_attr = block_manager->get_attr(data_field_block_id);
     auto new_attr = old_attr;
     if (new_attr.links > 0) new_attr.links -= 1;
@@ -423,7 +426,7 @@ void filesystem::freeze_block()
 void filesystem::clear_frozen_all()
 {
     ACTION_START_NO_ARGS(actions::ACTION_CLEAR_FROZEN_BLOCK_ALL)
-    for (uint64_t i = 0; i < block_manager->blk_count; i++)
+    for (uint64_t i = 1; i < block_manager->blk_count; i++)
     {
         if (block_manager->block_allocated(i))
         {
@@ -469,7 +472,7 @@ struct statvfs filesystem::fstat()
 void filesystem::release_all_frozen_blocks()
 {
     std::lock_guard lock(mutex);
-    for (uint64_t i = 0; i < block_manager->blk_count; i++)
+    for (uint64_t i = 1; i < block_manager->blk_count; i++)
     {
         if (block_manager->block_allocated(i)) {
             if (const auto attr = block_manager->get_attr(i); attr.frozen > 0) {
@@ -478,4 +481,20 @@ void filesystem::release_all_frozen_blocks()
         }
     }
     clear_frozen_all();
+}
+
+void filesystem::reset()
+{
+    std::lock_guard lock(mutex);
+    ACTION_START_NO_ARGS(actions::ACTION_RESET_FROM_SNAPSHOT);
+    for (uint64_t i = 1; i < block_manager->blk_count; i++)
+    {
+        if (const auto attr = block_manager->get_attr(i);
+            !attr.frozen && attr.type != COW_REDUNDANCY_TYPE)
+        {
+            // discard ALL changes
+            block_manager->free_block(i);
+        }
+    }
+    ACTION_END(actions::ACTION_RESET_FROM_SNAPSHOT);
 }

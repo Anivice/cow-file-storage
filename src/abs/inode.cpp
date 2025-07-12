@@ -20,6 +20,7 @@
 
 #include <ranges>
 #include <functional>
+#include <random>
 #include "service.h"
 #include "helper/cpp_assert.h"
 #include "helper/log.h"
@@ -681,6 +682,80 @@ void filesystem::directory_t::unlink_inode(const std::string & name)
     save_dentries(list);
     auto inode = fs.make_inode<inode_t>(inode_id);
     inode.unlink_self();
+}
+
+void filesystem::directory_t::reset_as(const std::string & name) {
+    if (inode_id != 0) {
+        throw fs_error::operation_bot_permitted("Cannot recover snapshots on non-root inodes");
+    }
+
+    if (auto fs_header = fs.block_manager->get_header();
+        fs_header.runtime_info.snapshot_number == 0)
+    {
+        throw fs_error::operation_bot_permitted("No snapshots found");
+    }
+
+    auto snapshot_root_id = get_inode(name);
+    auto snapshot_inode = fs.make_inode<inode_t>(snapshot_root_id);
+
+    // get all dentries
+    std::vector < std::pair < std::string, uint64_t > > snapshot_roots;
+    // check which ones are snapshots
+    for (auto dentries = list_dentries();
+        const auto & [name, inode] : dentries)
+    {
+        if (fs.get_attr(inode).frozen == 2) {
+            snapshot_roots.emplace_back(name, inode);
+        }
+    }
+
+    // free all non-redundancy blocks without COW
+    fs.reset();
+
+    // copy over
+    std::vector<uint8_t> snapshot_inode_data;
+    snapshot_inode_data.resize(block_size);
+    fs.read_block(snapshot_root_id, snapshot_inode_data.data(), block_size, 0);
+    fs.write_block(0, snapshot_inode_data.data(), block_size, 0);
+
+    // update volume root inode header with proper info
+    auto [ root_inode_from_snapshot_data ] = snapshot_inode.get_header();
+    root_inode_from_snapshot_data.st_ino = 0;
+    root_inode_from_snapshot_data.st_mode |= 0x80; // recover write attributes
+    save_header(inode_header_t{ .attributes = root_inode_from_snapshot_data });
+
+    // recover previous snapshot roots, should name conflict, rename it
+    auto new_root_dentries = this->list_dentries(); // now that data are reverted to previous inode, dentries will be updated
+    for (auto & [name, inode] : snapshot_roots)
+    {
+        if (new_root_dentries.contains(name) && new_root_dentries.at(name) != inode) { // dentry exists but different inode
+            std::random_device rd;
+            std::mt19937 gen(rd());
+            std::uniform_int_distribution<> distrib(0, INT32_MAX);
+            for (uint64_t i = 0; i < 4096; i++)
+            {
+                uint64_t seed = distrib(gen);
+                uint64_t certy = hashcrc64(seed);
+                std::stringstream ss;
+                ss << "_" << std::setw(16) << std::setfill('0') << std::hex << certy << "_" << std::dec << inode;
+                const std::string new_name = name + ss.str();
+                if (!new_root_dentries.contains(new_name)) {
+                    new_root_dentries.emplace(new_name, inode); // renamed inode
+                    break;
+                }
+            }
+        }
+        else if (!new_root_dentries.contains(name)) { // no such entry
+            new_root_dentries.emplace(name, inode); // add it
+        }
+    }
+    this->save_dentries(new_root_dentries);
+
+    // set new root block attributes
+    auto snapshot_block_attr = fs.get_attr(snapshot_root_id);
+    snapshot_block_attr.frozen = 0;
+    snapshot_block_attr.links = 1;
+    fs.set_attr(0, snapshot_block_attr);
 }
 
 void filesystem::directory_t::snapshot(const std::string & name)

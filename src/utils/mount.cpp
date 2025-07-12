@@ -29,8 +29,14 @@
 #include "helper/color.h"
 #include "operations.h"
 
-extern "C" struct snapshot_ioctl_msg { char snapshot_name [CFS_MAX_FILENAME_LENGTH]; };
+extern "C" struct snapshot_ioctl_msg {
+    char snapshot_name [CFS_MAX_FILENAME_LENGTH];
+    uint64_t action;
+};
 #define CFS_PUSH_SNAPSHOT _IOW('M', 0x42, struct snapshot_ioctl_msg)
+
+#define CREATE      (0)
+#define ROLLBACKTO  (1)
 
 namespace mount {
     static std::string filesystem_path;
@@ -138,7 +144,11 @@ namespace mount {
         if (cmd == CFS_PUSH_SNAPSHOT)
         {
             const auto * msg = static_cast<snapshot_ioctl_msg *>(data);
-            return do_snapshot(msg->snapshot_name);
+            if (msg->action == CREATE) {
+                return do_snapshot(msg->snapshot_name);
+            } else if (msg->action == ROLLBACKTO) {
+                return do_rollback(msg->snapshot_name);
+            }
         }
 
         return -EINVAL;
