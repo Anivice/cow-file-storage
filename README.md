@@ -4,7 +4,7 @@
 
 This project is served as a proof-of-concept, not at anywhere had any intention
 to deliver any production level stability, security, or even functionality.
-The code has low quality, and has more focus on structure than performance.
+The code has low quality and has more focus on structure than performance.
 
 ## Introduction
 
@@ -19,8 +19,6 @@ How to use goes here
 How to build goes here
 
 ## TODOs
-
-Different TODOs goes here
 
  - [x] Basic Filesystem Structures
  - [x] Block Map to Memory

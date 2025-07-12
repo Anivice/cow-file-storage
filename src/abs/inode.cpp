@@ -684,7 +684,8 @@ void filesystem::directory_t::unlink_inode(const std::string & name)
     inode.unlink_self();
 }
 
-void filesystem::directory_t::reset_as(const std::string & name) {
+void filesystem::directory_t::reset_as(const std::string & name)
+{
     if (inode_id != 0) {
         throw fs_error::operation_bot_permitted("Cannot recover snapshots on non-root inodes");
     }
@@ -764,6 +765,10 @@ void filesystem::directory_t::snapshot(const std::string & name)
         throw fs_error::operation_bot_permitted("Creating snapshot on non-root inode");
     }
 
+    if (list_dentries().contains(name)) {
+        throw fs_error::inode_exists("name exists");
+    }
+
     auto fs_header = fs.block_manager->get_header();
     if (fs_header.runtime_info.snapshot_number >= 127) {
         throw fs_error::operation_bot_permitted("Max snapshot volume number reached");
@@ -804,6 +809,10 @@ void filesystem::directory_t::snapshot(const std::string & name)
 
 filesystem::inode_t filesystem::directory_t::create_dentry(const std::string & name, const mode_t mode)
 {
+    if (list_dentries().contains(name)) {
+        throw fs_error::inode_exists("name exists");
+    }
+
     dentry_t dentry{};
     std::strncpy(dentry.name, name.c_str(), CFS_MAX_FILENAME_LENGTH - 1);
     dentry.inode_id = fs.allocate_new_block();

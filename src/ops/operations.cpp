@@ -40,20 +40,23 @@ template < typename InodeType >
 }
 
 #define CATCH_TAIL                                                                  \
-    catch (fs_error::no_such_file_or_directory & e) {                               \
-        error_log("Unhandled exception: ", e.what());                               \
+    catch (fs_error::no_such_file_or_directory &) {                                 \
         return -ENOENT;                                                             \
-    } catch (fs_error::not_a_directory & e) {                                       \
-        error_log("Unhandled exception: ", e.what());                               \
+    } catch (fs_error::not_a_directory &) {                                         \
         return -ENOTDIR;                                                            \
-    } catch (fs_error::filesystem_space_depleted & e) {                             \
-        error_log("Unhandled exception: ", e.what());                               \
+    } catch (fs_error::is_a_directory &) {                                          \
+        return -EISDIR;                                                             \
+    } catch (fs_error::filesystem_space_depleted &) {                               \
         return -ENOSPC;                                                             \
+    } catch (fs_error::operation_bot_permitted &) {                                 \
+        return -EPERM;                                                              \
+    } catch (fs_error::inode_exists&) {                                             \
+        return -EEXIST;                                                             \
     } catch (std::exception &e) {                                                   \
         error_log("Unhandled exception: ", e.what());                               \
         return -EIO;                                                                \
     } catch (...) {                                                                 \
-        error_log("Unhandled exception");                                           \
+        error_log("Unhandled unknown exception");                                   \
         return -EIO;                                                                \
     }
 

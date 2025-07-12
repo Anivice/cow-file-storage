@@ -4,7 +4,6 @@
 #include <vector>
 #include <string>
 #include <sys/stat.h>
-#include <cstdint>
 
 int do_getattr (const char *path, struct stat *stbuf);
 int do_readdir (const char *path, std::vector < std::string > & entries);

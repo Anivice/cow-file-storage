@@ -67,10 +67,13 @@ namespace fs_error {
     MAKE_ERROR_TYPE(filesystem_block_manager_init_error);
     MAKE_ERROR_TYPE(filesystem_space_depleted);
     MAKE_ERROR_TYPE(filesystem_frozen_block_protection);
+
     MAKE_ERROR_TYPE(no_such_file_or_directory);
     MAKE_ERROR_TYPE(not_a_directory);
     MAKE_ERROR_TYPE(is_a_directory);
     MAKE_ERROR_TYPE(operation_bot_permitted);
+    MAKE_ERROR_TYPE(inode_exists);
+
     MAKE_ERROR_TYPE(unknown_error);
 }
 
