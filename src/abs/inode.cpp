@@ -520,31 +520,33 @@ uint64_t filesystem::inode_t::write(const void * buff, uint64_t size, const uint
     auto block_redirect = [&](const uint64_t block_id)->uint64_t
     {
         auto attr = fs.get_attr(block_id);
-        uint64_t target_first_block = block_id;
-        if (attr.frozen)
+        // copy attributes
+        const uint64_t target_first_block = fs.allocate_new_block();
+        attr.frozen = 0;
+        attr.links = 0;
+        attr.cow_refresh_count = 0;
+        fs.set_attr(target_first_block, attr);
+
+        // copy block data
+        std::vector<uint8_t> data;
+        data.resize(block_size);
+        fs.read_block(block_id, data.data(), block_size, 0);
+        fs.write_block(target_first_block, data.data(), block_size, 0);
+
+        // redirect block
+        redirect_3rd_level_block(block_id, target_first_block);
+        if (!attr.frozen) // not frozen? set original as a COW block
         {
-            // copy attributes
-            target_first_block = fs.allocate_new_block();
-            attr.frozen = 0;
-            attr.links = 0;
-            attr.cow_refresh_count = 0;
-            fs.set_attr(target_first_block, attr);
-
-            // copy block data
-            std::vector<uint8_t> data;
-            data.resize(block_size);
-            fs.read_block(block_id, data.data(), block_size, 0);
-            fs.write_block(target_first_block, data.data(), block_size, 0);
-
-            // redirect block
-            redirect_3rd_level_block(block_id, target_first_block);
+            attr.type_backup = attr.type;
+            attr.type = COW_REDUNDANCY_TYPE;
+            fs.set_attr(block_id, attr);
         }
 
         return target_first_block;
     };
 
     uint64_t g_wr_off = 0;
-    // 1. write first block
+    // 1. write the first block
     const uint64_t target_first_block = block_redirect(level3_blocks[first_blk_position]);
     fs.write_block(target_first_block, buff, first_blk_write_size, first_blk_offset);
     g_wr_off += first_blk_write_size;

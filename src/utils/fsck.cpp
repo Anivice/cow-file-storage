@@ -172,12 +172,11 @@ int fsck_main(int argc, char **argv)
                     head.static_info.data_block_attribute_table_start, head.static_info.data_block_attribute_table_end,
                     head.static_info.data_table_end - head.static_info.data_table_start);
                 std::cout << "Block Allocation Bitmap:\n      ";
-                constexpr uint64_t line_max_entries = 14;
                 const auto zeros =
                     static_cast<int>(std::log2(head.static_info.data_table_end - head.static_info.data_table_start) / std::log2(10)) + 1;
                 for (uint64_t i = 0; i < head.static_info.data_table_end - head.static_info.data_table_start; i++)
                 {
-                    if (i % line_max_entries == 0 && i >= line_max_entries) {
+                    if (constexpr uint64_t line_max_entries = 14; i % line_max_entries == 0 && i >= line_max_entries) {
                         std::cout << std::endl << "      ";
                     }
 
@@ -192,28 +191,28 @@ int fsck_main(int argc, char **argv)
                             case INDEX_TYPE: {
                                 filesystem::inode_t::inode_header_t header{};
                                 auto inode = block_io.safe_at(i + head.static_info.data_table_start);
-                                inode->get((uint8_t*)&header, sizeof(header), 0);
+                                inode->get(reinterpret_cast<uint8_t *>(&header), sizeof(header), 0);
                                 std::cout << color::color(0,4,0) << frozen_color
-                                << "<" << std::setw(zeros) << std::setfill('0') << i << "-"
-                                << (header.attributes.st_mode & S_IFDIR ? "D" : "I") << "-"
-                                << std::setw(3) << std::setfill('0') << blk_attr.links << ">";
+                                            << "<" << std::setw(zeros) << std::setfill('0') << i << "-"
+                                            << (header.attributes.st_mode & S_IFDIR ? "D" : "I") << "-"
+                                            << std::setw(3) << std::setfill('0') << blk_attr.links << ">";
                             }
                             break;
                             case STORAGE_TYPE: std::cout << color::color(5,5,1) << frozen_color
-                                << "<" << std::setw(zeros) << std::setfill('0') << i << "-S-"
-                                << std::setw(3) << std::setfill('0') << blk_attr.links << ">";
+                                                            << "<" << std::setw(zeros) << std::setfill('0') << i << "-S-"
+                                                            << std::setw(3) << std::setfill('0') << blk_attr.links << ">";
                             break;
                             case POINTER_TYPE: std::cout << color::color(0,3,5) << frozen_color
-                                << "<" << std::setw(zeros) << std::setfill('0') << i << "-P-"
-                                << std::setw(3) << std::setfill('0') << blk_attr.links << ">";
+                                                            << "<" << std::setw(zeros) << std::setfill('0') << i << "-P-"
+                                                            << std::setw(3) << std::setfill('0') << blk_attr.links << ">";
                             break;
                             default: std::cout << color::color(1,0,1) << frozen_color
-                                << "<" << std::setw(zeros) << std::setfill('0') << i << "-R-###" << ">";
+                                                << "<" << std::setw(zeros) << std::setfill('0') << i << "-R-###>";
                             break;
                         }
                         std::cout << color::no_color();
                     } else {
-                        std::cout << '.';
+                        std::cout << color::color(1,1,1) << "<" << std::setw(zeros) << std::setfill('0') << i << "-E-###>";
                     }
                 }
 

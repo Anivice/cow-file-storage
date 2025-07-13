@@ -228,7 +228,7 @@ int do_write (const char * path, const char * buffer, const size_t size, const o
         auto inode = get_inode_by_path<filesystem::inode_t>(splitString(path));
         RETURN_EROFS_IF_INODE_IS_FROZEN(inode);
         if (const auto [attributes] = inode.get_header();
-            static_cast<uint64_t>(attributes.st_size) < (offset + size))
+            static_cast<uint64_t>(attributes.st_size) < (offset + size)) // expand on demand
         {
             inode.resize(size + offset);
         }
