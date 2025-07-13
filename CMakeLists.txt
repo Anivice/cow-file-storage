@@ -118,10 +118,9 @@ else ()
             -fstrict-aliasing
             -fdata-sections
             -ffunction-sections
-            -D_FORTIFY_SOURCE=2
-            -fstack-protector-strong
+            -fno-stack-protector
             -Wl,-z,relro -Wl,-z,now
-            -s
+#            -s
     )
 
     set(optimization_link_flags
@@ -135,10 +134,9 @@ else ()
             -fdata-sections
             -ffunction-sections
             -Wl,--gc-sections
-            -D_FORTIFY_SOURCE=2
-            -fstack-protector-strong
+            -fno-stack-protector
             -Wl,-z,relro -Wl,-z,now
-            -s
+#            -s
     )
 
     add_compile_definitions(DEBUG=0)
@@ -160,7 +158,7 @@ link_libraries(${LIBFUSE_LIBRARIES})
 include_directories(src/include)
 add_compile_definitions(CORE_VERSION="0.0.1")
 add_compile_definitions(BACKEND_VERSION="0.0.1")
-add_library(core SHARED
+add_library(core OBJECT
         src/include/helper/cpp_assert.h
         src/include/helper/err_type.h
         src/helper/log.cpp              src/include/helper/log.h
@@ -212,6 +210,3 @@ add_custom_target(utils ALL
 )
 
 add_executable(snapshot src/utils/snapshot.c)
-
-add_executable(pro src/main.cpp)
-target_link_libraries(pro PRIVATE core)

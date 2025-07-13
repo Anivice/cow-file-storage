@@ -56,7 +56,6 @@ struct cfs_head_t
     struct {
         uint64_t mount_timestamp;       // when was the last time it's mounted
         uint64_t last_check_timestamp;  // last time check ran
-        uint64_t data_bitmap_checksum;
         uint64_t snapshot_number; // max 127
         uint64_t snapshot_number_dup;
         uint64_t snapshot_number_dup2;
@@ -98,6 +97,7 @@ struct cfs_head_t
         uint64_t _26;
         uint64_t _27;
         uint64_t _28;
+        uint64_t _29;
     } _reserved_;
 };
 static_assert(sizeof(cfs_head_t) == SECTOR_SIZE, "Faulty head size");

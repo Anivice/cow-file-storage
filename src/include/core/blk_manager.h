@@ -25,16 +25,11 @@ private:
     std::unique_ptr < bitmap > block_bitmap;        /// bitmap
     std::unique_ptr < bitmap > block_bitmap_mirror; /// bitmap mirror
     std::unique_ptr < block_attr_t > block_attr;    /// block attributes
-    std::mutex mutex;           /// operation mutex
 
 public:
     cfs_head_t get_header();    /// read header from disk
 
 private:
-    /// update provided header with freshly calculated bitmap hash
-    /// @param cfs_head header
-    void update_bitmap_hash(cfs_head_t & cfs_head);
-
     /*!
      * Get allocation state
      * @param index Data field block id
@@ -58,7 +53,7 @@ public:
     uint64_t allocate_block(); /// allocate block
     cfs_blk_attr_t get_attr(uint64_t index); /// get block attributes
     void set_attr(uint64_t index, cfs_blk_attr_t val); /// set block attributes
-    bool block_allocated(const uint64_t index) { std::lock_guard lock(mutex); return bitget(index); }
+    bool block_allocated(const uint64_t index) { return bitget(index); }
     uint64_t free_blocks() { const auto hd = get_header(); return blk_count - hd.runtime_info.allocated_blocks; } /// get how many blocks are free from header into
 
     /// deallocate a block

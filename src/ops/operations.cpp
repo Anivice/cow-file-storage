@@ -71,8 +71,6 @@ int do_getattr (const char *path, struct stat *stbuf)
         std::lock_guard lock(operations_mutex);
         auto inode = get_inode_by_path<filesystem::inode_t>(splitString(path));
         auto header = inode.get_header();
-        header.attributes.st_atim = filesystem::inode_t::get_current_time();
-        inode.save_header(header);
         *stbuf = inode.get_header().attributes;
         return 0;
     }
@@ -331,12 +329,7 @@ int do_fsync (const char *, int)
 
 int do_releasedir (const char *)
 {
-    try {
-        std::lock_guard lock(operations_mutex);
-        filesystem_instance->sync();
-        return 0;
-    }
-    CATCH_TAIL
+    return 0;
 }
 
 int do_fsyncdir (const char *, int)
@@ -486,8 +479,6 @@ int do_readlink (const char * path, char * buffer, const size_t size)
         std::lock_guard lock(operations_mutex);
         auto inode = get_inode_by_path<filesystem::inode_t>(splitString(path));
         if (auto header = inode.get_header(); (header.attributes.st_mode & S_IFMT) == S_IFLNK) {
-            header.attributes.st_atim = filesystem::inode_t::get_current_time();
-            inode.save_header(header);
             const auto len = inode.read(buffer, size, 0);
             buffer[std::min(len, size)] = '\0';
             return 0;

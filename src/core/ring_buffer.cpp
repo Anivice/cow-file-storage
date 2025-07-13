@@ -94,8 +94,6 @@ inline std::uint64_t contiguous_space(const std::uint64_t from, const std::uint6
 
 void ring_buffer::write(std::uint8_t *src, std::uint64_t len)
 {
-    std::lock_guard<std::mutex> lock(mutex);
-
     /* 1. Load current state */
     std::uint64_t rd_off, wr_off;
     flags_t flags{};
@@ -138,8 +136,6 @@ void ring_buffer::write(std::uint8_t *src, std::uint64_t len)
 
 // void ring_buffer::retreat_wrote_steps(std::uint64_t steps)
 // {
-//     std::lock_guard<std::mutex> lock(mutex);
-//
 //     /* 1. Load state */
 //     std::uint64_t rd_off, wr_off;
 //     flags_t flags{};
@@ -171,8 +167,6 @@ void ring_buffer::write(std::uint8_t *src, std::uint64_t len)
 
 std::uint64_t ring_buffer::read(std::uint8_t *dst, std::uint64_t len, bool shadow_read)
 {
-    std::lock_guard<std::mutex> lock(mutex);
-
     /* 1. Load state */
     std::uint64_t rd_off, wr_off;
     flags_t flags{};
@@ -213,8 +207,6 @@ std::uint64_t ring_buffer::read(std::uint8_t *dst, std::uint64_t len, bool shado
 
 uint64_t ring_buffer::available_buffer()
 {
-    std::lock_guard<std::mutex> lock(mutex);
-
     /* 1. Load state */
     std::uint64_t rd_off, wr_off;
     flags_t flags{};

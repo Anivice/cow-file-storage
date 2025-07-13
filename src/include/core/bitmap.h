@@ -29,7 +29,6 @@ class bitmap {
     const uint64_t map_end;
     const uint64_t boundary;
     const uint64_t blk_size;
-    std::mutex mutex;
 
 public:
     explicit bitmap(block_io_t & block_mapping_,

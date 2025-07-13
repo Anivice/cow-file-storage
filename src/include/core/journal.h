@@ -115,7 +115,6 @@ static_assert(sizeof(entry_t) == 64);
 class journaling
 {
     std::unique_ptr < ring_buffer > rb;
-    std::mutex mtx;
     const uint64_t magic = 0xABCDABCDDEADBEEF;
 
 public:
@@ -131,19 +130,12 @@ public:
             fs_header.static_info.journal_end);
     }
 
-    // void revert_last_action()
-    // {
-    //     std::lock_guard<std::mutex> lock(mtx);
-    //     rb->retreat_wrote_steps(sizeof(entry_t));
-    // }
-
     void push_action(const actions::Actions action,
         const uint64_t operand1 = 0,
         const uint64_t operand2 = 0,
         const uint64_t operand3 = 0,
         const uint64_t operand4 = 0)
     {
-        std::lock_guard<std::mutex> lock(mtx);
         const entry_t entry = {
             .magic = magic,
             .timestamp = get_timestamp(),

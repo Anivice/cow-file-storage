@@ -34,7 +34,7 @@ filesystem::inode_t::inode_header_t filesystem::inode_t::unblocked_get_header()
 
 void filesystem::inode_t::unblocked_save_header(const inode_header_t header)
 {
-    fs.write_block(inode_id, &header, sizeof(header), 0);
+    fs.write_block(inode_id, &header, sizeof(header), 0, true);
 }
 
 std::vector < uint64_t > filesystem::inode_t::get_inode_block_pointers()
@@ -47,7 +47,7 @@ std::vector < uint64_t > filesystem::inode_t::get_inode_block_pointers()
 
 void filesystem::inode_t::save_inode_block_pointers(const std::vector < uint64_t > & block_pointers)
 {
-    fs.write_block(inode_id, block_pointers.data(), block_pointers.size() * sizeof(uint64_t), sizeof(inode_header_t));
+    fs.write_block(inode_id, block_pointers.data(), block_pointers.size() * sizeof(uint64_t), sizeof(inode_header_t), true);
 }
 
 filesystem::inode_t::inode_t(filesystem & fs, const uint64_t inode_id, const uint64_t block_size)
@@ -72,19 +72,16 @@ filesystem::inode_t::inode_t(filesystem & fs, const uint64_t inode_id, const uin
  */
 
 filesystem::inode_t::inode_header_t filesystem::inode_t::get_header() {
-    std::lock_guard<std::mutex> guard(mutex);
     return unblocked_get_header();
 }
 
 void filesystem::inode_t::save_header(const filesystem::inode_t::inode_header_t & header) {
-    std::lock_guard<std::mutex> guard(mutex);
     if (const auto attr = fs.get_attr(inode_id); attr.frozen) return;
     unblocked_save_header(header);
 }
 
 void filesystem::inode_t::resize(const uint64_t new_size)
 {
-    std::lock_guard<std::mutex> guard(mutex);
     auto header = unblocked_get_header();
     header.attributes.st_mtim = get_current_time();
     unblocked_save_header(header);
@@ -93,7 +90,6 @@ void filesystem::inode_t::resize(const uint64_t new_size)
 
 void filesystem::inode_t::unlink_self()
 {
-    std::lock_guard<std::mutex> guard(mutex);
     const auto level2_blocks = linearized_level2_pointers();
     const auto level3_blocks = linearized_level3_pointers();
     auto unlink_block = [&](const uint64_t block_id)
@@ -180,7 +176,7 @@ std::vector < uint64_t > filesystem::inode_t::get_pointer_by_block(const uint64_
 
 void filesystem::inode_t::save_pointer_to_block(const uint64_t data_field_block_id, const std::vector < uint64_t > & block_pointers)
 {
-    fs.write_block(data_field_block_id, block_pointers.data(), block_pointers.size() * sizeof(uint64_t), 0);
+    fs.write_block(data_field_block_id, block_pointers.data(), block_pointers.size() * sizeof(uint64_t), 0, true);
 }
 
 void filesystem::inode_t::unblocked_resize(const uint64_t file_length)
@@ -434,7 +430,6 @@ std::vector<uint64_t> filesystem::inode_t::linearized_level2_pointers()
 
 uint64_t filesystem::inode_t::read(void *buff, uint64_t size, const uint64_t offset)
 {
-    std::lock_guard<std::mutex> guard(mutex);
     auto header = unblocked_get_header();
     auto inode_blk_attr = fs.get_attr(inode_id);
 
@@ -448,12 +443,6 @@ uint64_t filesystem::inode_t::read(void *buff, uint64_t size, const uint64_t off
 
     if ((offset + size) > static_cast<uint64_t>(header.attributes.st_size)) {
         size = header.attributes.st_size - offset;
-    }
-
-    if (!inode_blk_attr.frozen)
-    {
-        header.attributes.st_atim = get_current_time();
-        unblocked_save_header(header);
     }
 
     const auto level3_blocks = linearized_level3_pointers();
@@ -488,7 +477,6 @@ uint64_t filesystem::inode_t::read(void *buff, uint64_t size, const uint64_t off
 
 uint64_t filesystem::inode_t::write(const void * buff, uint64_t size, const uint64_t offset)
 {
-    std::lock_guard<std::mutex> guard(mutex);
     auto header = unblocked_get_header();
 
     if (header.attributes.st_size == 0) {
@@ -503,8 +491,7 @@ uint64_t filesystem::inode_t::write(const void * buff, uint64_t size, const uint
         size = header.attributes.st_size - offset;
     }
 
-    header.attributes.st_mtim = get_current_time();
-    header.attributes.st_atim = header.attributes.st_mtim;
+    header.attributes.st_atim = header.attributes.st_mtim = header.attributes.st_mtim = get_current_time();
     unblocked_save_header(header);
 
     const auto level3_blocks = linearized_level3_pointers();
@@ -531,7 +518,7 @@ uint64_t filesystem::inode_t::write(const void * buff, uint64_t size, const uint
         std::vector<uint8_t> data;
         data.resize(block_size);
         fs.read_block(block_id, data.data(), block_size, 0);
-        fs.write_block(target_first_block, data.data(), block_size, 0);
+        fs.write_block(target_first_block, data.data(), block_size, 0, false);
 
         // redirect block
         redirect_3rd_level_block(block_id, target_first_block);
@@ -548,18 +535,18 @@ uint64_t filesystem::inode_t::write(const void * buff, uint64_t size, const uint
     uint64_t g_wr_off = 0;
     // 1. write the first block
     const uint64_t target_first_block = block_redirect(level3_blocks[first_blk_position]);
-    fs.write_block(target_first_block, buff, first_blk_write_size, first_blk_offset);
+    fs.write_block(target_first_block, buff, first_blk_write_size, first_blk_offset, false);
     g_wr_off += first_blk_write_size;
 
     // 2. write continuous blocks
     for (uint64_t i = 0; i < continuous_blks; i++) {
         const uint64_t blk_position = block_redirect(level3_blocks[first_blk_position + 1 + i]);
-        fs.write_block(blk_position, static_cast<const uint8_t *>(buff) + g_wr_off, block_size, 0);
+        fs.write_block(blk_position, static_cast<const uint8_t *>(buff) + g_wr_off, block_size, 0, false);
         g_wr_off += block_size;
     }
 
     if (last_blk_write_size) {
-        fs.write_block(block_redirect(level3_blocks[last_blk_position]), static_cast<const uint8_t *>(buff) + g_wr_off, last_blk_write_size, 0);
+        fs.write_block(block_redirect(level3_blocks[last_blk_position]), static_cast<const uint8_t *>(buff) + g_wr_off, last_blk_write_size, 0, false);
         g_wr_off += last_blk_write_size;
     }
 
@@ -598,7 +585,7 @@ uint64_t filesystem::inode_t::level3::mkblk(const bool storage)
     std::vector<uint8_t> block_data_empty;
     block_data_empty.resize(block_size);
     std::memset(block_data_empty.data(), 0, block_size);
-    fs.write_block(new_block_id, block_data_empty.data(), block_size, 0);
+    fs.write_block(new_block_id, block_data_empty.data(), block_size, 0, false);
     return new_block_id;
 }
 
@@ -619,13 +606,45 @@ std::map < std::string, uint64_t > filesystem::directory_t::list_dentries()
 
 void filesystem::directory_t::save_dentries(const std::map < std::string, uint64_t > & dentries)
 {
+    auto original_dentries = list_dentries();
+    // easy diff, detect appending
+    bool appending = true;
+    for (const auto & [name, inode] : original_dentries) {
+        if (auto it = dentries.find(name); !(it != dentries.end() && it->second == inode)) {
+            appending = false;
+            break;
+        }
+    }
+
     resize(dentries.size() * sizeof(dentry_t));
-    uint64_t offset = 0;
-    for (const auto & [name, inode] : dentries) {
-        dentry_t dentry{};
-        std::strncpy(dentry.name, name.c_str(), sizeof(dentry.name) - 1);
-        dentry.inode_id = inode;
-        offset += inode_t::write(&dentry, sizeof(dentry), offset);
+    if (appending)
+    {
+        // figure out what is being appended
+        std::vector<std::pair<const std::string, uint64_t>> new_dentries;
+        for (const auto & [name, inode] : dentries) {
+            if (auto it = original_dentries.find(name); it == original_dentries.end()) { // original cannot find this dentry
+                new_dentries.emplace_back(name, inode);
+            }
+        }
+
+        // only write new ones
+        uint64_t offset = original_dentries.size() * sizeof(dentry_t);
+        for (const auto & [name, inode] : new_dentries) {
+            dentry_t dentry{};
+            std::strncpy(dentry.name, name.c_str(), sizeof(dentry.name) - 1);
+            dentry.inode_id = inode;
+            offset += inode_t::write(&dentry, sizeof(dentry), offset);
+        }
+    }
+    else // not appending? sorry, ganna refresh the whole thing
+    {
+        uint64_t offset = 0;
+        for (const auto & [name, inode] : dentries) {
+            dentry_t dentry{};
+            std::strncpy(dentry.name, name.c_str(), sizeof(dentry.name) - 1);
+            dentry.inode_id = inode;
+            offset += inode_t::write(&dentry, sizeof(dentry), offset);
+        }
     }
 }
 
@@ -645,7 +664,7 @@ uint64_t filesystem::directory_t::get_inode(const std::string & name)
             const auto new_inode = fs.allocate_new_block();
             // update inode number
             ((inode_header_t*)old_inode_data.data())->attributes.st_ino = new_inode;
-            fs.write_block(new_inode, old_inode_data.data(), block_size, 0);
+            fs.write_block(new_inode, old_inode_data.data(), block_size, 0, true);
 
             // copy attribute
             child_attr.frozen = 0;
@@ -719,7 +738,7 @@ void filesystem::directory_t::reset_as(const std::string & name)
     std::vector<uint8_t> snapshot_inode_data;
     snapshot_inode_data.resize(block_size);
     fs.read_block(snapshot_root_id, snapshot_inode_data.data(), block_size, 0);
-    fs.write_block(0, snapshot_inode_data.data(), block_size, 0);
+    fs.write_block(0, snapshot_inode_data.data(), block_size, 0, true);
 
     // update volume root inode header with proper info
     auto [ root_inode_from_snapshot_data ] = snapshot_inode.get_header();
@@ -786,7 +805,7 @@ void filesystem::directory_t::snapshot(const std::string & name)
     std::vector<uint8_t> old_inode_data;
     old_inode_data.resize(block_size);
     fs.read_block(0, old_inode_data.data(), block_size, 0);
-    fs.write_block(new_root_inode_id, old_inode_data.data(), block_size, 0);
+    fs.write_block(new_root_inode_id, old_inode_data.data(), block_size, 0, false);
 
     // update volume root inode header with proper info
     auto [ old_root_inode_header ] = this->get_header();
@@ -833,7 +852,7 @@ filesystem::inode_t filesystem::directory_t::create_dentry(const std::string & n
     std::vector<uint8_t> data;
     data.resize(fs.block_manager->block_size);
     std::memset(data.data(), 0, fs.block_manager->block_size);
-    fs.write_block(dentry.inode_id, data.data(), fs.block_manager->block_size, 0);
+    fs.write_block(dentry.inode_id, data.data(), fs.block_manager->block_size, 0, false);
 
     auto new_inode = fs.make_inode<inode_t>(dentry.inode_id);
     // create a new inode header

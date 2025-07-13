@@ -321,6 +321,6 @@ namespace debug { std::string _strip_name_(const std::string & name); }
 #define verbose_log(...)    if (::debug::verbose) ::debug::log_with_caller(debug::_strip_name_(std::source_location::current().function_name()).c_str(), color::color(2,2,2), "[VERBOSE]: ", color::no_color(), __VA_ARGS__, "\n");
 #define console_log(...)    if (DEBUG) ::debug::log_with_caller(debug::_strip_name_(std::source_location::current().function_name()).c_str(), __VA_ARGS__, "\n"); else ::debug::log(__VA_ARGS__, "\n");
 #define warning_log(...)    ::debug::log_with_caller(debug::_strip_name_(std::source_location::current().function_name()).c_str(), color::color(4,4,0), "[WARNING]: ", color::color(5,5,0), __VA_ARGS__, color::no_color(), "\n")
-#define error_log(...)      ::debug::log_with_caller(debug::_strip_name_(std::source_location::current().function_name()).c_str(), color::color(4,0,0), "[ERROR]:   ", color::color(5,0,0), __VA_ARGS__, errno != 0 ? color::color(5,0,0) : color::color(0,4,0), "errno=", errno, " (", strerror(errno), ")", color::no_color(), "\n")
+#define error_log(...)      ::debug::log_with_caller(debug::_strip_name_(std::source_location::current().function_name()).c_str(), color::color(4,0,0), "[ERROR]:   ", color::color(5,0,0), __VA_ARGS__, errno != 0 ? (color::color(5,0,0) + "> errno=" + std::to_string(errno) + " (" + strerror(errno) + ")" + color::no_color()) : "", "\n")
 
 #endif // LOG_H

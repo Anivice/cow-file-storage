@@ -218,9 +218,8 @@ cfs_head_t make_head(const sector_t sectors, const uint64_t block_size, const st
 
 void clear_entries(basic_io_t & io, cfs_head_t & head)
 {
-    auto clear_region = [&](const uint64_t start, const uint64_t end, const bool first_bit_being_1 = false)->uint64_t
+    auto clear_region = [&](const uint64_t start, const uint64_t end, const bool first_bit_being_1 = false)->void
     {
-        CRC64 hash_empty;
         sector_data_t data{};
         std::memset(data.data(), 0, data.size());
         for (uint64_t i = start; i < end; ++i)
@@ -236,19 +235,15 @@ void clear_entries(basic_io_t & io, cfs_head_t & head)
                     data[0] = 0x00;
                 }
                 io.write(data, j + i * head.static_info.block_over_sector);
-                hash_empty.update(data.data(), data.size());
             }
         }
-
-        return hash_empty.get_checksum();
     };
 
     clear_region(0, 1);
     clear_region(head.static_info.blocks - 1, head.static_info.blocks);
-    head.runtime_info.data_bitmap_checksum = clear_region(head.static_info.data_bitmap_start, head.static_info.data_bitmap_end, true);
+    clear_region(head.static_info.data_bitmap_start, head.static_info.data_bitmap_end, true);
     clear_region(head.static_info.data_bitmap_backup_start, head.static_info.data_bitmap_backup_end, true);
-    clear_region(head.static_info.data_block_attribute_table_start, head.static_info.data_block_attribute_table_end);
-    clear_region(head.static_info.journal_start, head.static_info.journal_end);
+    clear_region(head.static_info.journal_start, head.static_info.journal_start + head.static_info.block_over_sector);
     clear_region(head.static_info.data_table_start, head.static_info.data_table_start + head.static_info.block_over_sector);
     filesystem::inode_t::inode_header_t header {};
     header.attributes.st_mode = S_IFDIR | 0755;

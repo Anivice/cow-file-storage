@@ -77,6 +77,8 @@ std::string backtrace_level_1()
     std::stringstream ss;
     const backtrace_info frames = obtain_stack_frame();
     int i = 0;
+
+#if DEBUG
     auto trim_sym = [](std::string name)->std::string
     {
         if (trim_symbol_yes())
@@ -102,13 +104,19 @@ std::string backtrace_level_1()
 
         return std::make_pair("", name);
     };
+#endif
 
     for (const auto &symbol_name: frames | std::views::keys)
     {
+#if DEBUG
         const auto [path, name] = get_pair(symbol_name);
         ss  << color::color(0,4,1) << "Frame " << color::color(5,2,1) << "#" << i++ << " "
             << std::hex << color::color(2,4,5) << path
             << ": " << color::color(1,5,5) << trim_sym(name) << color::no_color() << "\n";
+#else
+        ss  << color::color(0,4,1) << "Frame " << color::color(5,2,1) << "#" << i++ << " "
+            << symbol_name << color::no_color() << "\n";
+#endif
     }
 
     return ss.str();
@@ -117,6 +125,7 @@ std::string backtrace_level_1()
 // slow backtrace, with better trace info
 std::string backtrace_level_2()
 {
+#if DEBUG
     std:: stringstream ss;
     const auto frames = obtain_stack_frame();
     int i = 0;
@@ -186,6 +195,10 @@ std::string backtrace_level_2()
     }
 
     return ss.str();
+#else
+    return "Backtrace level 2 not available for this build";
+#endif
+
 }
 
 std::atomic_int debug::g_pre_defined_level = -1;

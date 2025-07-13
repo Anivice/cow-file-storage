@@ -26,7 +26,6 @@
 
 void basic_io_t::open(const char *file_name)
 {
-    std::lock_guard<std::mutex> lock(mutex);
     fd = ::open(file_name, /* O_DIRECT | */ O_RDWR /* | O_DSYNC | O_LARGEFILE | O_NOATIME | O_SYNC */);
     flock lk = {
         .l_type   = F_WRLCK,   // write lock
@@ -45,7 +44,6 @@ void basic_io_t::open(const char *file_name)
 void basic_io_t::close()
 {
     if (fd != -1) {
-        std::lock_guard<std::mutex> lock(mutex);
         flock lk = {
             .l_type   = F_UNLCK,
             .l_whence = SEEK_SET,
@@ -65,7 +63,6 @@ void basic_io_t::read(sector_data_t & buffer, const sector_t sector)
         throw runtime_error("Error reading sector");
     }
 
-    std::lock_guard<std::mutex> lock(mutex);
     assert_short(lseek(fd, static_cast<long>(sector * 512), SEEK_SET) >= 0);
     assert_short(::read(fd, buffer.data(), 512) == 512);
 }
@@ -76,7 +73,6 @@ void basic_io_t::write(const sector_data_t & buffer, const sector_t sector)
         throw runtime_error("Error reading sector");
     }
 
-    std::lock_guard<std::mutex> lock(mutex);
     assert_short(lseek(fd, static_cast<long>(sector * 512), SEEK_SET) >= 0);
     assert_short(::write(fd, buffer.data(), 512) == 512);
 }

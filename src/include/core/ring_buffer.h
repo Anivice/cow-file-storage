@@ -7,7 +7,6 @@ class ring_buffer
 {
     block_io_t & io;
     const uint64_t blk_size;
-    std::mutex mutex;
     const uint64_t map_start;
     const uint64_t map_end;
     struct flags_t {

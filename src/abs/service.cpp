@@ -59,8 +59,7 @@ uint64_t filesystem::unblocked_allocate_new_block()
         new_block_id = block_manager->allocate_block();
     } catch (...) { }
     if (new_block_id != UINT64_MAX) {
-        ACTION_START(actions::ACTION_TRANSACTION_ALLOCATE_BLOCK, new_block_id);
-        ACTION_END(actions::ACTION_TRANSACTION_ALLOCATE_BLOCK);
+        block_manager->journal->push_action(actions::ACTION_TRANSACTION_ALLOCATE_BLOCK, new_block_id);
     }
     else
     {
@@ -94,8 +93,7 @@ uint64_t filesystem::unblocked_allocate_new_block()
             block_manager->free_block(cow_blocks.front().first); // free the smallest refresher
             try { // try again
                 new_block_id = block_manager->allocate_block();
-                ACTION_START(actions::ACTION_TRANSACTION_ALLOCATE_BLOCK, new_block_id);
-                ACTION_END(actions::ACTION_TRANSACTION_ALLOCATE_BLOCK);
+                block_manager->journal->push_action(actions::ACTION_TRANSACTION_ALLOCATE_BLOCK, new_block_id);
             } catch (...) {
                 // WTF???
                 warning_log("Filesystem cannot allocate new blocks even after freeing one COW block, internal BUG?");
@@ -168,7 +166,7 @@ uint64_t filesystem::unblocked_read_block(const uint64_t data_field_block_id, vo
     return size;
 }
 
-uint64_t filesystem::unblocked_write_block(const uint64_t data_field_block_id, const void * buff, uint64_t size, const uint64_t offset)
+uint64_t filesystem::unblocked_write_block(const uint64_t data_field_block_id, const void * buff, uint64_t size, const uint64_t offset, const bool cow_active)
 {
     if (offset > block_manager->block_size) return 0;
     if (offset + size > block_manager->block_size) size = block_manager->block_size - offset;
@@ -179,7 +177,7 @@ uint64_t filesystem::unblocked_write_block(const uint64_t data_field_block_id, c
     {
         throw fs_error::filesystem_frozen_block_protection("");
     }
-    else
+    else if (cow_active)
     {
         try {
             new_block = unblocked_allocate_new_block();
@@ -202,6 +200,11 @@ uint64_t filesystem::unblocked_write_block(const uint64_t data_field_block_id, c
         data_block->update((uint8_t*)buff, size, offset);
         ACTION_END(actions::ACTION_TRANSACTION_MODIFY_DATA_FIELD_BLOCK_CONTENT);
         return size;
+    } else {
+        ACTION_START(actions::ACTION_TRANSACTION_MODIFY_DATA_FIELD_BLOCK_CONTENT, data_field_block_id, UINT64_MAX, 0, 0);
+        data_block->update((uint8_t*)buff, size, offset);
+        return size;
+        ACTION_END(actions::ACTION_TRANSACTION_MODIFY_DATA_FIELD_BLOCK_CONTENT);
     }
 }
 
@@ -219,13 +222,11 @@ void filesystem::unblocked_delink_block(const uint64_t data_field_block_id)
 
 void filesystem::delink_block(const uint64_t data_field_block_id)
 {
-    std::lock_guard<std::mutex> lock(mutex);
     unblocked_delink_block(data_field_block_id);
 }
 
 void filesystem::revert_transaction()
 {
-    std::lock_guard<std::mutex> lock(mutex);
     std::vector < entry_t > logs = block_manager->journal->export_journaling();
     std::vector < entry_t > last_transaction;
     std::vector < entry_t > backup;
@@ -295,7 +296,6 @@ void filesystem::revert_transaction()
 
                 // recalculate bitmap checksum, see if it is the second bitmap checksum entry
                 cfs_head_t header = block_manager->get_header();
-                block_manager->update_bitmap_hash(header);
 
                 // update the bitmap hash table
                 try {
@@ -385,13 +385,11 @@ void filesystem::revert_transaction()
 
 cfs_blk_attr_t filesystem::get_attr(const uint64_t data_field_block_id)
 {
-    std::lock_guard<std::mutex> lock(mutex);
     return block_manager->get_attr(data_field_block_id);
 }
 
 void filesystem::set_attr(const uint64_t data_field_block_id, const cfs_blk_attr_t attr)
 {
-    std::lock_guard<std::mutex> lock(mutex);
     const auto old_attr = block_manager->get_attr(data_field_block_id);
     if (old_attr.frozen) {
         throw fs_error::filesystem_frozen_block_protection("Attempting to modify a frozen block");
@@ -406,7 +404,6 @@ void filesystem::set_attr(const uint64_t data_field_block_id, const cfs_blk_attr
 
 void filesystem::freeze_block()
 {
-    std::lock_guard<std::mutex> lock(mutex);
     ACTION_START_NO_ARGS(actions::ACTION_FREEZE_BLOCK)
     for (uint64_t i = 1; i < block_manager->blk_count; i++) // 0 not freezable
     {
@@ -443,13 +440,11 @@ void filesystem::clear_frozen_all()
 
 void filesystem::sync()
 {
-    std::lock_guard lock(mutex);
     block_io->sync();
 }
 
 struct statvfs filesystem::fstat()
 {
-    std::lock_guard lock(mutex);
     const auto free = block_manager->free_blocks();
     const struct statvfs ret = {
         .f_bsize = block_manager->block_size,
@@ -471,7 +466,6 @@ struct statvfs filesystem::fstat()
 
 void filesystem::release_all_frozen_blocks()
 {
-    std::lock_guard lock(mutex);
     for (uint64_t i = 1; i < block_manager->blk_count; i++)
     {
         if (block_manager->block_allocated(i)) {
@@ -485,7 +479,6 @@ void filesystem::release_all_frozen_blocks()
 
 void filesystem::reset()
 {
-    std::lock_guard lock(mutex);
     ACTION_START_NO_ARGS(actions::ACTION_RESET_FROM_SNAPSHOT);
     for (uint64_t i = 1; i < block_manager->blk_count; i++)
     {

@@ -70,7 +70,6 @@ void block_attr_t::linear_read(void * data, const uint64_t size, const uint64_t 
 uint16_t block_attr_t::get(const uint64_t index)
 {
     assert_short(index < entries);
-    std::lock_guard lock(mutex);
     const uint64_t offset = index * sizeof(uint16_t);
     uint16_t result = 0;
     linear_read(&result, sizeof(uint16_t), offset);
@@ -80,7 +79,6 @@ uint16_t block_attr_t::get(const uint64_t index)
 void block_attr_t::set(const uint64_t index, const uint16_t value)
 {
     assert_short(index < entries);
-    std::lock_guard<std::mutex> lock(mutex);
     const uint64_t offset = index * sizeof(uint16_t);
     linear_write(&value, sizeof(uint16_t), offset);
 }

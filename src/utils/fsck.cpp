@@ -103,7 +103,6 @@ cfs_head_t print_head(cfs_head_t head)
     console_log("  ─────────────────────────────┼───────────────────────────────────────────────────────────────────────");
     console_log(color::color(5,5,5), "       FILE SYSTEM HEAD BACKUP │ BLOCK: ", region_gen(head.static_info.blocks - 1, head.static_info.blocks));
     console_log("  ─────────────────────────────┴───────────────────────────────────────────────────────────────────────");
-    console_log(color::color(5,5,5), std::hex, "Filesystem Bitmap Hash: ", head.runtime_info.data_bitmap_checksum);
     console_log(color::color(5,5,5), std::dec, "Filesystem Allocated Blocks: ", head.runtime_info.allocated_blocks);
     console_log(color::color(5,5,5), std::dec, "Filesystem Last Allocated Block: ", head.runtime_info.last_allocated_block);
     console_log("=======================================================================================================");

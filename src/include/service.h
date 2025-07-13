@@ -21,16 +21,13 @@
 #ifndef SERVICE_H
 #define SERVICE_H
 
-#include <filesystem>
 #include <memory>
 #include <sys/stat.h>
 #include <sys/statvfs.h>
 #include "service.h"
 #include "helper/log.h"
 #include "core/blk_manager.h"
-#if DEBUG
-# include "helper/err_type.h"
-#endif
+#include "helper/err_type.h"
 
 #if DEBUG
 # define MAKE_ERROR_TYPE(name)                                              \
@@ -86,32 +83,27 @@ class filesystem
     basic_io_t basic_io;
     std::unique_ptr < block_io_t > block_io;
     std::unique_ptr < blk_manager > block_manager;
-    std::mutex mutex;
 
     uint64_t unblocked_allocate_new_block();
     void unblocked_deallocate_block(uint64_t data_field_block_id);
     uint64_t unblocked_read_block(uint64_t data_field_block_id, void * buff, uint64_t size, uint64_t offset);
-    uint64_t unblocked_write_block(uint64_t data_field_block_id, const void * buff, uint64_t size, uint64_t offset);
+    uint64_t unblocked_write_block(uint64_t data_field_block_id, const void * buff, uint64_t size, uint64_t offset, bool cow_active = true);
 
     uint64_t allocate_new_block() {
-        std::lock_guard<std::mutex> lock(mutex);
         return unblocked_allocate_new_block();
     }
 
     void deallocate_block(const uint64_t data_field_block_id) {
-        std::lock_guard<std::mutex> lock(mutex);
         unblocked_deallocate_block(data_field_block_id);
     }
 
     uint64_t read_block(const uint64_t data_field_block_id, void * buff, const uint64_t size, const uint64_t offset) {
-        std::lock_guard<std::mutex> lock(mutex);
         return unblocked_read_block(data_field_block_id, buff, size, offset);
     }
 
-    uint64_t write_block(uint64_t data_field_block_id, const void * buff, uint64_t size, const uint64_t offset)
+    uint64_t write_block(const uint64_t data_field_block_id, const void * buff, const uint64_t size, const uint64_t offset, const bool cow)
     {
-        std::lock_guard<std::mutex> lock(mutex);
-        return unblocked_write_block(data_field_block_id, buff, size, offset);
+        return unblocked_write_block(data_field_block_id, buff, size, offset, cow);
     }
 
     cfs_blk_attr_t get_attr(uint64_t data_field_block_id);
@@ -168,7 +160,7 @@ public:
                     std::vector<uint8_t> ptr_data;
                     ptr_data.resize(block_size);
                     fs.read_block(data_field_block_id, ptr_data.data(), block_size, 0);
-                    fs.write_block(new_ptr_id, ptr_data.data(), block_size, 0);
+                    fs.write_block(new_ptr_id, ptr_data.data(), block_size, 0, false);
                     this->data_field_block_id = new_ptr_id;
                 }
             }
@@ -188,8 +180,6 @@ public:
                 }
             }
         };
-
-        std::mutex mutex;
 
     public:
         struct inode_header_t {

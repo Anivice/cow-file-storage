@@ -1,10 +1,8 @@
 #ifndef BLOCK_IO_H
 #define BLOCK_IO_H
 
-#include <atomic>
 #include <map>
 #include <vector>
-
 #include "crc64sum.h"
 #include "core/basic_io.h"
 #include "core/cfs.h"
@@ -33,7 +31,6 @@ class block_io_t {
 private:
     class block_data_t
     {
-        std::mutex mutex{};                 /// R/W mutes
         std::vector<uint8_t> data_;         /// in memory cache data
         const uint64_t block_sector_start;  /// on-disk sector start [start, end)
         const uint64_t block_sector_end;    /// on-disk sector end [start, end)
@@ -53,8 +50,8 @@ private:
         void update(const uint8_t * new_data, size_t new_size, uint64_t in_block_offset);   /// update cache
         void sync();                        /// write to disk
         [[nodiscard]] bool is_out_of_sync() const { return out_of_sync; } /// check if update() is called
-        void not_in_use() { std::lock_guard lock(mutex); in_use = false; }
-        uint64_t crc64() { std::lock_guard lock(mutex); CRC64 crc64; crc64.update(data_.data(), data_.size()); return crc64.get_checksum(); }
+        void not_in_use() { in_use = false; }
+        uint64_t crc64() { CRC64 crc64; crc64.update(data_.data(), data_.size()); return crc64.get_checksum(); }
         friend class block_io_t;
     };
 
@@ -70,7 +67,6 @@ public:
         block_data_t * operator->()
         {
             {
-                std::lock_guard lock(mother.mutex);
                 if (mother.block_cache.contains(block_id)) {
                     return block;
                 }
@@ -91,7 +87,6 @@ public:
         {
             bool not_in_use = false;
             {
-                std::lock_guard lock(mother.mutex);
                 if (mother.block_cache.contains(block_id)) {
                     not_in_use = true;
                 }
@@ -106,11 +101,10 @@ public:
 private:
     basic_io_t & io;                        /// basic IO
     cfs_head_t cfs_head{};                  /// in memory head
-    std::atomic_bool filesystem_dirty_on_mount_;    /// if filesystem is dirty on mount
+    bool filesystem_dirty_on_mount_;    /// if filesystem is dirty on mount
     std::map < uint64_t /* block id */, std::unique_ptr < block_data_ptr_t > > block_cache; /// cache
-    std::atomic < uint64_t > max_cached_block_number;   /// max cached block allowed in memory
-    std::mutex mutex;
-    std::atomic_bool read_only_fs;
+    uint64_t max_cached_block_number;   /// max cached block allowed in memory
+    bool read_only_fs;
 
     void filesystem_verification();         /// filesystem basic health check
     void unblocked_sync_header();           /// sync head to disk

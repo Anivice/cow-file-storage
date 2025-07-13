@@ -29,7 +29,6 @@ class block_attr_t {
     const uint64_t attr_region_start;
     const uint64_t attr_region_end;
     const uint64_t entries;
-    std::mutex mutex;
     void linear_write(const void * data, uint64_t size, uint64_t offset);
     void linear_read(void * data, uint64_t size, uint64_t offset);
 

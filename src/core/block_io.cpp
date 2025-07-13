@@ -68,7 +68,6 @@ block_io_t::block_io_t(basic_io_t & io, const bool read_only_fs) : io(io)
 block_io_t::~block_io_t()
 {
     if (read_only_fs) return;
-    std::lock_guard<std::mutex> lock(mutex);
     cfs_head.runtime_info.flags.clean = true;
     unblocked_sync_header();
     block_cache.clear(); // force free all cached blocks
@@ -77,14 +76,12 @@ block_io_t::~block_io_t()
 void block_io_t::update_runtime_info(const cfs_head_t head)
 {
     if (read_only_fs) throw read_only_filesystem();
-    std::lock_guard<std::mutex> lock(mutex);
     cfs_head.runtime_info = head.runtime_info;
     unblocked_sync_header();
 }
 
 void block_io_t::sync()
 {
-    std::lock_guard<std::mutex> lock(mutex);
     block_cache.clear();
     if (!read_only_fs) {
         unblocked_sync_header();
@@ -153,20 +150,17 @@ block_io_t::block_data_t & block_io_t::unblocked_at(const uint64_t index)
 
 block_io_t::block_data_t & block_io_t::at(const uint64_t index)
 {
-    std::lock_guard<std::mutex> lock(mutex);
     return unblocked_at(index);
 }
 
 void block_io_t::block_data_t::get(uint8_t *buf, const size_t sz, const uint64_t in_blk_off)
 {
-    std::lock_guard<std::mutex> lock(mutex);
     assert_short(in_blk_off + sz <= data_.size());
     std::memcpy(buf, data_.data() + in_blk_off, sz);
 }
 
 void block_io_t::block_data_t::update(const uint8_t * new_data, const size_t new_size, const uint64_t in_block_offset)
 {
-    std::lock_guard<std::mutex> lock(mutex);
     if(read_only) {
         throw runtime_error("Read-only block " +
             std::to_string(this->block_sector_end / (this->block_sector_end - this->block_sector_start + 1)));
@@ -178,7 +172,6 @@ void block_io_t::block_data_t::update(const uint8_t * new_data, const size_t new
 
 void block_io_t::block_data_t::sync()
 {
-    std::lock_guard<std::mutex> lock(mutex);
     if (read_only) return;
     if (!out_of_sync) return;
     for (uint64_t i = block_sector_start; i < block_sector_end; i++)
