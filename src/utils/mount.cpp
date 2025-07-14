@@ -378,7 +378,7 @@ int mount_main(int argc, char **argv)
         std::vector<std::string> fuse_args = mount::splitString(arg_val, ' ');
         if constexpr (DEBUG) {
             // fuse_args.emplace_back("-s");
-            fuse_args.emplace_back("-d");
+            // fuse_args.emplace_back("-d");
             fuse_args.emplace_back("-f");
         }
 

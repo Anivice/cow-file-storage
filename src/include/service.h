@@ -110,7 +110,6 @@ class filesystem
     cfs_blk_attr_t get_attr(uint64_t data_field_block_id);
     void set_attr(uint64_t data_field_block_id, cfs_blk_attr_t attr);
     void freeze_block();
-    void clear_frozen_all();
     void revert_transaction();
     void delink_block(uint64_t data_field_block_id);
     void unblocked_delink_block(uint64_t data_field_block_id);
@@ -260,7 +259,6 @@ public:
 
     void sync();
     struct statvfs fstat();
-    void release_all_frozen_blocks();
     explicit filesystem(const char * location);
     ~filesystem();
 };

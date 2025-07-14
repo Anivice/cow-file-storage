@@ -32,7 +32,9 @@ How to build goes here
  - [x] Filesystem Snapshot Operations
  - [x] FUSE Implementation
  - [x] Filesystem Reset (Snapshot Fast Recover)
- - [ ] Filesystem Performance Optimization
+ - [x] Filesystem Performance Optimization
+ - [ ] Low Space Filesystem Error
+ - [ ] Snapshot Removal
  - [ ] Filesystem Crash Recovery (FCRM, Filesystem Check and Repair on Mount)
  - [ ] Robustness Test Results
 

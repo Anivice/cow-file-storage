@@ -50,16 +50,16 @@ if ("X${CMAKE_BUILD_TYPE}" STREQUAL "XDebug")
             # Debugging and stack protection
             -g3                                     # Maximum debug information, including macro expansions
             -O0
-            -fstack-usage                           # Generate stack usage info for each function
-            -fstack-protector-all                   # Protect all functions with a stack canary to prevent stack overflow attacks
+#            -fstack-usage                           # Generate stack usage info for each function
+#            -fstack-protector-all                   # Protect all functions with a stack canary to prevent stack overflow attacks
             # -D_FORTIFY_SOURCE=2                   # Buffer overflow detection on safer libc functions (e.g., memcpy).
             # You need to enable optimization for _FORTIFY_SOURCE to work!
             -gdwarf-4                               # Generate DWARF version 4 debug information
 
-            -fno-eliminate-unused-debug-types
-            -fno-omit-frame-pointer
-            -Wl,-z,relro -Wl,-z,now
-            -fstack-protector-all
+#            -fno-eliminate-unused-debug-types
+#            -fno-omit-frame-pointer
+#            -Wl,-z,relro -Wl,-z,now
+#            -fstack-protector-all
     )
 
     set(linker_options
@@ -67,19 +67,19 @@ if ("X${CMAKE_BUILD_TYPE}" STREQUAL "XDebug")
             -Wl,--no-omagic                         # Prevent the generation of object files in memory; useful for debugging
             -Wl,--as-needed                         # Only link libraries that are actually needed to reduce binary size
             -Wl,--fatal-warnings                    # Treat all linker warnings as errors to catch issues early
-            -Wl,-z,relro                            # Read-only relocations to prevent certain memory exploits (optional)
+#            -Wl,-z,relro                            # Read-only relocations to prevent certain memory exploits (optional)
             -Wl,-z,now                              # Fully resolve all symbols during the link time for extra safety
-            -Wl,-z,noexecstack                      # Prevent execution of code on the stack (security hardening)
+#            -Wl,-z,noexecstack                      # Prevent execution of code on the stack (security hardening)
             -Wl,-z,defs                             # Ensure all symbols are defined, and prevent undefined symbols
             -Wl,-O0
 
             -gdwarf-4                               # Generate detailed debug information for the linker
-            -fno-eliminate-unused-debug-types
-            -fno-omit-frame-pointer
+#            -fno-eliminate-unused-debug-types
+#            -fno-omit-frame-pointer
 
             # Stack protection
-            -fstack-protector-all                   # Link with stack protection for all functions
-            -Wl,-z,relro -Wl,-z,now
+#            -fstack-protector-all                   # Link with stack protection for all functions
+#            -Wl,-z,relro -Wl,-z,now
     )
 
 #    list(APPEND compiler_options

@@ -242,6 +242,7 @@ void filesystem::unblocked_delink_block(const uint64_t data_field_block_id)
     assert_short(data_field_block_id != 0);
     const auto old_attr = block_manager->get_attr(data_field_block_id);
     auto new_attr = old_attr;
+    if (new_attr.frozen && new_attr.links == 1) return; // ignore frozen block delink to 0 requests
     if (new_attr.links > 0) new_attr.links -= 1;
     ACTION_START(actions::ACTION_TRANSACTION_MODIFY_BLOCK_ATTRIBUTES,
         data_field_block_id, cfs_blk_attr_t_to_uint16(old_attr), cfs_blk_attr_t_to_uint16(new_attr))
@@ -443,29 +444,12 @@ void filesystem::freeze_block()
                 !attr.frozen && attr.type != COW_REDUNDANCY_TYPE)
             {
                 attr.frozen = 1;
+                attr.links++;
                 block_manager->set_attr(i, attr);
             }
         }
     }
     ACTION_END(actions::ACTION_FREEZE_BLOCK)
-}
-
-void filesystem::clear_frozen_all()
-{
-    ACTION_START_NO_ARGS(actions::ACTION_CLEAR_FROZEN_BLOCK_ALL)
-    for (uint64_t i = 1; i < block_manager->blk_count; i++)
-    {
-        if (block_manager->block_allocated(i))
-        {
-            if (auto attr = block_manager->get_attr(i); attr.frozen > 0 && attr.links == 0)
-            {
-                attr.frozen = 0;
-                block_manager->set_attr(i, attr);
-                block_manager->free_block(i);
-            }
-        }
-    }
-    ACTION_END(actions::ACTION_CLEAR_FROZEN_BLOCK_ALL)
 }
 
 void filesystem::sync()
@@ -506,19 +490,6 @@ struct statvfs filesystem::fstat()
     };
 
     return ret;
-}
-
-void filesystem::release_all_frozen_blocks()
-{
-    for (uint64_t i = 1; i < block_manager->blk_count; i++)
-    {
-        if (block_manager->block_allocated(i)) {
-            if (const auto attr = block_manager->get_attr(i); attr.frozen > 0) {
-                unblocked_delink_block(i);
-            }
-        }
-    }
-    clear_frozen_all();
 }
 
 void filesystem::reset()

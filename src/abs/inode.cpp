@@ -316,6 +316,17 @@ void filesystem::inode_t::unblocked_resize(const uint64_t file_length)
 
 void filesystem::inode_t::redirect_3rd_level_block(const uint64_t old_data_field_block_id, const uint64_t new_data_field_block_id)
 {
+    auto safe_delete = [&](const uint64_t block_id)
+    {
+        assert_short(block_id != 0);
+        const auto attr = fs.get_attr(block_id);
+        if (attr.links > 1) {
+            fs.delink_block(block_id);
+        } else if (attr.links == 1 && !attr.frozen) {
+            fs.deallocate_block(block_id);
+        }
+    };
+
     auto try_save = [&](uint64_t & pointer, const std::vector<uint64_t> & data)->bool
     {
         // 1. check level 2 block, see if it's frozen
@@ -329,13 +340,14 @@ void filesystem::inode_t::redirect_3rd_level_block(const uint64_t old_data_field
 
             // 1. update block attributes
             this_level_blk_ptr_attr.frozen = 0;
+            this_level_blk_ptr_attr.links = 1; // this block is not linked to multiple nodes, unlike previous
             fs.set_attr(new_block, this_level_blk_ptr_attr);
 
             // 2. copy data over
             save_pointer_to_block(new_block, data);
 
             // 3. unlink old block
-            fs.delink_block(pointer);
+            safe_delete(pointer);
 
             debug_log("Redirecting immune block pointer ", pointer, " to new pointer block ", new_block);
             // 4. update parent
@@ -364,8 +376,8 @@ void filesystem::inode_t::redirect_3rd_level_block(const uint64_t old_data_field
                         if (lv3_blk != 0 && lv3_blk == old_data_field_block_id)
                         {
                             // redirect means the original block will lose one inode link
+                            safe_delete(lv3_blk);
                             lv3_blk = new_data_field_block_id;
-                            fs.delink_block(lv3_blk);
                             found = true;
                             debug_log("Redirect block pointer from ", old_data_field_block_id, " to ", new_data_field_block_id);
                             break;
@@ -522,7 +534,7 @@ uint64_t filesystem::inode_t::write(const void * buff, uint64_t size, const uint
         // copy attributes
         const uint64_t target_first_block = fs.allocate_new_block();
         new_attr.frozen = 0;
-        new_attr.links = 0;
+        new_attr.links = 1;
         new_attr.cow_refresh_count = 0;
         new_attr.newly_allocated_thus_no_cow = 1;
         fs.set_attr(target_first_block, new_attr);
@@ -686,6 +698,7 @@ uint64_t filesystem::directory_t::get_inode(const std::string & name)
 
                     // copy attribute
                     child_attr.frozen = 0;
+                    child_attr.links = 1;
                     fs.set_attr(new_inode, child_attr);
 
                     // increase link count for all blocks associated with the old inode
@@ -703,8 +716,6 @@ uint64_t filesystem::directory_t::get_inode(const std::string & name)
                     child = new_inode;
                     // update dentry
                 }
-
-                (void)fs.make_inode<inode_t>(child).get_header();
             }
 
             save_dentries(children);

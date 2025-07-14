@@ -307,36 +307,14 @@ int do_rmdir (const char * path)
         auto child_inode = filesystem_instance->make_inode<filesystem::inode_t>(child);
         content_changed_out_of_sync_to_fstat = true;
         content_changed_out_of_sync_to_get_inode = true;
-        if (child_inode.get_inode_blk_attr().frozen == 2)
-        {
-            debug_log("Removing ALL snapshots");
-            std::vector<std::string> snapshot_roots;
-            auto dentries = inode.list_dentries();
-            for (const auto & [name, inode] : dentries)
-            {
-                auto d_inode = filesystem_instance->make_inode<filesystem::inode_t>(inode);
-                if (d_inode.get_inode_blk_attr().frozen > 1) {
-                    snapshot_roots.emplace_back(name);
-                }
-            }
-            filesystem_instance->release_all_frozen_blocks();
-            for (const auto & name : snapshot_roots) {
-                dentries.erase(name);
-            }
-            inode.save_dentries(dentries);
-            return 0;
-        }
-        else if (child_inode.get_inode_blk_attr().frozen == 1) {
+        if (child_inode.get_inode_blk_attr().frozen == 1) {
             return -EROFS;
         }
-        else
-        {
-            if (child_inode.get_header().attributes.st_size != 0) {
-                return -ENOTEMPTY;
-            }
-            inode.unlink_inode(target);
-            return 0;
+        if (child_inode.get_header().attributes.st_size != 0) {
+            return -ENOTEMPTY;
         }
+        inode.unlink_inode(target);
+        return 0;
     }
     CATCH_TAIL
 }
@@ -437,6 +415,7 @@ int do_rollback(const char * name)
         root.reset_as(target);
         filesystem_instance->sync();
         debug_log("Filesystem rollback completed, history inode is ", name);
+        path_to_inode_fast_map.clear();
         content_changed_out_of_sync_to_fstat = true;
         content_changed_out_of_sync_to_get_inode = true;
         return 0;
