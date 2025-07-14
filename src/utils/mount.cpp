@@ -397,6 +397,11 @@ int mount_main(int argc, char **argv)
         mount::filesystem_mount_destination = bares[1];
         fuse_args.push_back(mount::filesystem_mount_destination);
 
+        fuse_args.emplace_back("-o");
+        fuse_args.emplace_back("subtype=cfs");
+        fuse_args.emplace_back("-o");
+        fuse_args.emplace_back("fsname=" + mount::filesystem_path);
+
         fuse_argv = std::make_unique<char*[]>(fuse_args.size() + 1);
         fuse_argv[0] = argv[0]; // redirect
         for (int i = 0; i < static_cast<int>(fuse_args.size()); ++i) {

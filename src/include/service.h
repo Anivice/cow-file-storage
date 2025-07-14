@@ -210,11 +210,6 @@ public:
         void unlink_self();
     };
 
-    class file_t final : public inode_t {
-    public:
-        explicit file_t(filesystem & fs, const uint64_t inode_id, const uint64_t block_size) : inode_t(fs, inode_id, block_size) { }
-    };
-
     class directory_t final : public inode_t {
     private:
         struct dentry_t {
@@ -223,7 +218,8 @@ public:
         };
 
     public:
-        explicit directory_t(filesystem & fs, const uint64_t inode_id, const uint64_t block_size) : inode_t(fs, inode_id, block_size)
+        explicit directory_t(filesystem & fs, const uint64_t inode_id, const uint64_t block_size)
+        : inode_t(fs, inode_id, block_size)
         {
             if (const auto &[attributes] = get_header();
                 !(attributes.st_mode & S_IFDIR))
@@ -246,7 +242,7 @@ public:
     }
 
     template < typename InodeType >
-    requires (std::is_same_v<InodeType, directory_t> || std::is_same_v<InodeType, inode_t> || std::is_same_v<InodeType, file_t>)
+    requires (std::is_same_v<InodeType, directory_t> || std::is_same_v<InodeType, inode_t>)
     InodeType make_inode(const uint64_t data_field_block_id)
     {
         if (block_manager->block_allocated(data_field_block_id)) {

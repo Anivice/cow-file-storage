@@ -265,6 +265,7 @@ void clear_entries(basic_io_t & io, cfs_head_t & head)
         .type = INDEX_TYPE,
         .type_backup = 0,
         .cow_refresh_count= 0,
+        .newly_allocated_thus_no_cow = 0,
         .links = 1,
     };
     std::memcpy(data.data(), &attr, sizeof(attr));

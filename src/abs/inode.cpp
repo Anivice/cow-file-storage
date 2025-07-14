@@ -515,13 +515,14 @@ uint64_t filesystem::inode_t::write(const void * buff, uint64_t size, const uint
     auto block_redirect = [&](const uint64_t block_id)->uint64_t
     {
         auto attr = fs.get_attr(block_id);
+        auto new_attr = attr;
         // copy attributes
         const uint64_t target_first_block = fs.allocate_new_block();
-        attr.frozen = 0;
-        attr.links = 0;
-        attr.cow_refresh_count = 0;
-        attr.newly_allocated_thus_no_cow = 1;
-        fs.set_attr(target_first_block, attr);
+        new_attr.frozen = 0;
+        new_attr.links = 0;
+        new_attr.cow_refresh_count = 0;
+        new_attr.newly_allocated_thus_no_cow = 1;
+        fs.set_attr(target_first_block, new_attr);
 
         // copy block data
         std::vector<uint8_t> data;
@@ -866,6 +867,7 @@ filesystem::inode_t filesystem::directory_t::create_dentry(const std::string & n
         .type = INDEX_TYPE,
         .type_backup = 0,
         .cow_refresh_count = 0,
+        .newly_allocated_thus_no_cow = 1,
         .links = 1,
     };
     fs.set_attr(dentry.inode_id, attr);
