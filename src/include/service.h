@@ -85,6 +85,7 @@ class filesystem
     std::unique_ptr < blk_manager > block_manager;
     std::map < uint64_t, std::map < std::string, uint64_t > /* dentries */ > directory_entries_map_cache;
     std::map < uint64_t, struct stat > stat_map_cache;
+    std::chrono::time_point < std::chrono::system_clock > last_sync_commit_cache;
 
     uint64_t unblocked_allocate_new_block();
     void unblocked_deallocate_block(uint64_t data_field_block_id);
@@ -116,6 +117,7 @@ class filesystem
     void delink_block(uint64_t data_field_block_id);
     void unblocked_delink_block(uint64_t data_field_block_id);
     void reset();
+    void sync_commit_cache();
 
 public:
     class inode_t

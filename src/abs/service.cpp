@@ -470,6 +470,7 @@ void filesystem::clear_frozen_all()
 
 void filesystem::sync()
 {
+    sync_commit_cache();
     block_io->sync();
 }
 

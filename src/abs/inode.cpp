@@ -311,6 +311,16 @@ void filesystem::inode_t::unblocked_resize(const uint64_t file_length)
     unblocked_save_header(header);
 }
 
+void filesystem::sync_commit_cache()
+{
+    for (const auto & [ inode, dentry ] : directory_entries_map_cache) {
+        auto dir = make_inode<directory_t>(inode);
+        dir.save_dentries(dentry);
+    }
+
+    directory_entries_map_cache.clear();
+}
+
 void filesystem::inode_t::redirect_3rd_level_block(const uint64_t old_data_field_block_id, const uint64_t new_data_field_block_id)
 {
     auto try_save = [&](uint64_t & pointer, const std::vector<uint64_t> & data)->bool
@@ -625,6 +635,14 @@ std::map < std::string, uint64_t > filesystem::directory_t::list_dentries()
 
 void filesystem::directory_t::save_dentries(const std::map < std::string, uint64_t > & dentries)
 {
+    // update cache
+    auto_clean(fs.directory_entries_map_cache);
+    fs.directory_entries_map_cache[inode_id] = dentries;
+    const auto now = std::chrono::system_clock::now();
+    if (std::chrono::duration_cast<std::chrono::seconds>(now - fs.last_sync_commit_cache).count() < 20) {
+        return; // skip sync to mask successive COW
+    }
+
     auto original_dentries = list_dentries();
     // easy diff, detect appending
     bool appending = true;
@@ -666,9 +684,7 @@ void filesystem::directory_t::save_dentries(const std::map < std::string, uint64
         }
     }
 
-    // update cache
-    auto_clean(fs.directory_entries_map_cache);
-    fs.directory_entries_map_cache[inode_id] = dentries;
+    fs.last_sync_commit_cache = now;
 }
 
 uint64_t filesystem::directory_t::get_inode(const std::string & name)
