@@ -657,44 +657,46 @@ uint64_t filesystem::directory_t::get_inode(const std::string & name)
 {
     try
     {
-        auto child = list_dentries().at(name);
-        auto child_attr = fs.get_attr(child);
-        const auto my_attr = get_inode_blk_attr();
-        if (child_attr.frozen && !my_attr.frozen && child_attr.frozen != 2)
+        auto children = list_dentries();
+        if (const auto my_attr = get_inode_blk_attr(); !my_attr.frozen)
         {
-            // copy data
-            std::vector<uint8_t> old_inode_data;
-            old_inode_data.resize(block_size);
-            fs.read_block(child, old_inode_data.data(), block_size, 0);
-            const auto new_inode = fs.allocate_new_block();
-            // update inode number
-            ((inode_header_t*)old_inode_data.data())->attributes.st_ino = new_inode;
-            fs.write_block(new_inode, old_inode_data.data(), block_size, 0, true);
+            for (auto &child: children | std::views::values)
+            {
+                if (auto child_attr = fs.get_attr(child); child_attr.frozen && child_attr.frozen != 2) // duplicate frozen inode for all non-snapshots
+                {
+                    // copy data
+                    std::vector<uint8_t> old_inode_data;
+                    old_inode_data.resize(block_size);
+                    fs.read_block(child, old_inode_data.data(), block_size, 0);
+                    const auto new_inode = fs.allocate_new_block();
+                    // update inode number
+                    reinterpret_cast<inode_header_t *>(old_inode_data.data())->attributes.st_ino = new_inode;
+                    fs.write_block(new_inode, old_inode_data.data(), block_size, 0, true);
 
-            // copy attribute
-            child_attr.frozen = 0;
-            fs.set_attr(new_inode, child_attr);
+                    // copy attribute
+                    child_attr.frozen = 0;
+                    fs.set_attr(new_inode, child_attr);
 
-            // increase link count for all blocks associated with the old inode
-            auto old_inode = fs.make_inode<inode_t>(child);
-            std::vector<uint64_t> blocks = old_inode.linearized_level2_pointers();
-            blocks.insert_range(blocks.end(), old_inode.linearized_level3_pointers());
+                    // increase link count for all blocks associated with the old inode
+                    auto old_inode = fs.make_inode<inode_t>(child);
+                    std::vector<uint64_t> blocks = old_inode.linearized_level2_pointers();
+                    blocks.insert_range(blocks.end(), old_inode.linearized_level3_pointers());
 
-            for (const auto & block : blocks) {
-                auto attr = fs.block_manager->get_attr(block);
-                if (attr.links < 127) attr.links++;
-                fs.block_manager->set_attr(block, attr);
+                    for (const auto & block : blocks) {
+                        auto attr = fs.block_manager->get_attr(block);
+                        if (attr.links < 127) attr.links++;
+                        fs.block_manager->set_attr(block, attr);
+                    }
+
+                    debug_log("Inode duplicated due to frozen inode, inode ", child, ", new inode ", new_inode, ", parent ", get_header().attributes.st_ino);
+                    child = new_inode;
+                    // update dentry
+                }
             }
 
-            debug_log("Inode duplicated due to frozen inode, inode ", child, ", new inode ", new_inode, ", parent ", get_header().attributes.st_ino);
-            child = new_inode;
-
-            // update dentry
-            auto old_dentry = list_dentries();
-            old_dentry.at(name) = new_inode;
-            save_dentries(old_dentry);
+            save_dentries(children);
         }
-        return child;
+        return children.at(name);
     } catch (const std::out_of_range &) {
         throw fs_error::no_such_file_or_directory("");
     }
