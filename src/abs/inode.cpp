@@ -30,22 +30,14 @@
 
 filesystem::inode_t::inode_header_t filesystem::inode_t::unblocked_get_header()
 {
-    if (fs.stat_map_cache.contains(inode_id)) {
-        return inode_header_t{ .attributes = fs.stat_map_cache.at(inode_id) };
-    }
-
     inode_header_t header{};
     fs.read_block(inode_id, &header, sizeof(header), 0);
-    auto_clean(fs.stat_map_cache);
-    fs.stat_map_cache[inode_id] = header.attributes;
     return header;
 }
 
 void filesystem::inode_t::unblocked_save_header(const inode_header_t header)
 {
     fs.write_block(inode_id, &header, sizeof(header), 0, true);
-    auto_clean(fs.stat_map_cache);
-    fs.stat_map_cache[inode_id] = header.attributes;
 }
 
 std::vector < uint64_t > filesystem::inode_t::get_inode_block_pointers()
@@ -515,13 +507,14 @@ uint64_t filesystem::inode_t::write(const void * buff, uint64_t size, const uint
     auto block_redirect = [&](const uint64_t block_id)->uint64_t
     {
         auto attr = fs.get_attr(block_id);
+        auto new_attr = attr;
         // copy attributes
         const uint64_t target_first_block = fs.allocate_new_block();
-        attr.frozen = 0;
-        attr.links = 0;
-        attr.cow_refresh_count = 0;
-        attr.newly_allocated_thus_no_cow = 1;
-        fs.set_attr(target_first_block, attr);
+        new_attr.frozen = 0;
+        new_attr.links = 0;
+        new_attr.cow_refresh_count = 0;
+        new_attr.newly_allocated_thus_no_cow = 1;
+        fs.set_attr(target_first_block, new_attr);
 
         // copy block data
         std::vector<uint8_t> data;
@@ -602,10 +595,6 @@ uint64_t filesystem::inode_t::level3::mkblk(const bool storage)
 std::map < std::string, uint64_t > filesystem::directory_t::list_dentries()
 {
     static_assert(sizeof(dentry_t) == CFS_MAX_FILENAME_LENGTH + sizeof(uint64_t));
-    if (fs.directory_entries_map_cache.contains(inode_id)) {
-        return fs.directory_entries_map_cache.at(inode_id);
-    }
-
     const auto [ attributes ] = get_header();
     const uint64_t dentry_count = attributes.st_size / sizeof(dentry_t);
     std::map < std::string, uint64_t > ret;
@@ -617,8 +606,6 @@ std::map < std::string, uint64_t > filesystem::directory_t::list_dentries()
         (void)fs.make_inode<inode_t>(dentry.inode_id).get_header();
     }
 
-    auto_clean(fs.directory_entries_map_cache);
-    fs.directory_entries_map_cache.emplace(inode_id, ret);
     return ret;
 }
 
@@ -664,10 +651,6 @@ void filesystem::directory_t::save_dentries(const std::map < std::string, uint64
             offset += inode_t::write(&dentry, sizeof(dentry), offset);
         }
     }
-
-    // update cache
-    auto_clean(fs.directory_entries_map_cache);
-    fs.directory_entries_map_cache[inode_id] = dentries;
 }
 
 uint64_t filesystem::directory_t::get_inode(const std::string & name)
@@ -866,6 +849,7 @@ filesystem::inode_t filesystem::directory_t::create_dentry(const std::string & n
         .type = INDEX_TYPE,
         .type_backup = 0,
         .cow_refresh_count = 0,
+        .newly_allocated_thus_no_cow = 1,
         .links = 1,
     };
     fs.set_attr(dentry.inode_id, attr);

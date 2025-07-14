@@ -83,8 +83,6 @@ class filesystem
     basic_io_t basic_io;
     std::unique_ptr < block_io_t > block_io;
     std::unique_ptr < blk_manager > block_manager;
-    std::map < uint64_t, std::map < std::string, uint64_t > /* dentries */ > directory_entries_map_cache;
-    std::map < uint64_t, struct stat > stat_map_cache;
 
     uint64_t unblocked_allocate_new_block();
     void unblocked_deallocate_block(uint64_t data_field_block_id);
