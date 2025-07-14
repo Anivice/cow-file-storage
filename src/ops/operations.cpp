@@ -25,7 +25,7 @@ static std::vector<std::string> splitString(const std::string& s, const char del
         parts.push_back(token);
     }
 
-    assert_short(!parts.empty() && parts.front().empty(3));
+    assert_short(!parts.empty() && parts.front().empty());
     parts.erase(parts.begin());
     return parts;
 }
