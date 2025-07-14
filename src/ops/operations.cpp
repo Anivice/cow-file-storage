@@ -12,6 +12,8 @@
 std::unique_ptr < filesystem > filesystem_instance;
 std::mutex operations_mutex;
 std::atomic_bool content_changed_out_of_sync_to_fstat = true;
+std::atomic_bool content_changed_out_of_sync_to_get_inode = true;
+std::map < std::string /* path */, uint64_t /* inode */ > path_to_inode_fast_map;
 
 static std::vector<std::string> splitString(const std::string& s, const char delim = '/')
 {
@@ -23,7 +25,7 @@ static std::vector<std::string> splitString(const std::string& s, const char del
         parts.push_back(token);
     }
 
-    assert_short(!parts.empty() && parts.front().empty());
+    assert_short(!parts.empty() && parts.front().empty(3));
     parts.erase(parts.begin());
     return parts;
 }
@@ -32,10 +34,22 @@ template < typename InodeType >
 [[nodiscard]] InodeType get_inode_by_path(const std::vector<std::string> & path_vec)
 {
     uint64_t current_entry = 0;
+    std::string current_path = "::";
+    if (content_changed_out_of_sync_to_get_inode) {
+        path_to_inode_fast_map.clear();
+        content_changed_out_of_sync_to_get_inode = false;
+    }
+
     for (const auto & entry : path_vec)
     {
-        auto dir = filesystem_instance->make_inode<filesystem::directory_t>(current_entry);
-        current_entry = dir.get_inode(entry);
+        current_path += entry + "::";
+        if (auto it = path_to_inode_fast_map.find(current_path); it != path_to_inode_fast_map.end()) {
+            current_entry = it->second;
+        } else {
+            auto dir = filesystem_instance->make_inode<filesystem::directory_t>(current_entry);
+            current_entry = dir.get_inode(entry);
+            path_to_inode_fast_map[current_path] = current_entry;
+        }
     }
 
     return filesystem_instance->make_inode<InodeType>(current_entry);
@@ -107,6 +121,7 @@ int do_mkdir (const char * path, const mode_t mode)
         RETURN_EROFS_IF_INODE_IS_FROZEN(inode);
         inode.create_dentry(target, mode | S_IFDIR);
         content_changed_out_of_sync_to_fstat = true;
+        content_changed_out_of_sync_to_get_inode = true;
         return 0;
     }
     CATCH_TAIL
@@ -124,7 +139,6 @@ int do_chown (const char * path, const uid_t uid, const gid_t gid)
         header.attributes.st_gid = gid;
         header.attributes.st_ctim = filesystem::inode_t::get_current_time();
         inode.save_header(header);
-        content_changed_out_of_sync_to_fstat = true;
         return 0;
     }
     CATCH_TAIL;
@@ -140,7 +154,6 @@ int do_chmod (const char * path, const mode_t mode)
         header.attributes.st_mode = mode;
         header.attributes.st_ctim = filesystem::inode_t::get_current_time();
         inode.save_header(header);
-        content_changed_out_of_sync_to_fstat = true;
         return 0;
     }
     CATCH_TAIL
@@ -161,6 +174,7 @@ int do_create (const char * path, const mode_t mode)
         } catch (...) {}
         inode.create_dentry(target, mode);
         content_changed_out_of_sync_to_fstat = true;
+        content_changed_out_of_sync_to_get_inode = true;
         return 0;
     }
     CATCH_TAIL
@@ -251,7 +265,6 @@ int do_utimens (const char * path, const timespec tv[2])
         header.attributes.st_atim = tv[0];
         header.attributes.st_mtim = tv[1];
         inode.save_header(header);
-        content_changed_out_of_sync_to_fstat = true;
         return 0;
     }
     CATCH_TAIL
@@ -276,6 +289,7 @@ int do_unlink (const char * path)
 
         inode.unlink_inode(target);
         content_changed_out_of_sync_to_fstat = true;
+        content_changed_out_of_sync_to_get_inode = true;
         return 0;
     }
     CATCH_TAIL
@@ -292,6 +306,7 @@ int do_rmdir (const char * path)
         const auto child = inode.get_inode(target);
         auto child_inode = filesystem_instance->make_inode<filesystem::inode_t>(child);
         content_changed_out_of_sync_to_fstat = true;
+        content_changed_out_of_sync_to_get_inode = true;
         if (child_inode.get_inode_blk_attr().frozen == 2)
         {
             debug_log("Removing ALL snapshots");
@@ -377,6 +392,7 @@ int do_symlink (const char * path, const char * target)
         new_inode.resize(strlen(path));
         new_inode.write(path, strlen(path), 0);
         content_changed_out_of_sync_to_fstat = true;
+        content_changed_out_of_sync_to_get_inode = true;
         return 0;
     }
     CATCH_TAIL
@@ -399,6 +415,7 @@ int do_snapshot(const char * name)
         root.snapshot(target);
         filesystem_instance->sync();
         content_changed_out_of_sync_to_fstat = true;
+        content_changed_out_of_sync_to_get_inode = true;
         debug_log("Snapshot creation completed for ", name);
         return 0;
     } CATCH_TAIL
@@ -421,6 +438,7 @@ int do_rollback(const char * name)
         filesystem_instance->sync();
         debug_log("Filesystem rollback completed, history inode is ", name);
         content_changed_out_of_sync_to_fstat = true;
+        content_changed_out_of_sync_to_get_inode = true;
         return 0;
     } CATCH_TAIL
 }
@@ -458,6 +476,7 @@ int do_rename (const char * path, const char * name)
         target_dentries.emplace(target, index_node_id);
         target_parent_dir.save_dentries(target_dentries);
         content_changed_out_of_sync_to_fstat = true;
+        content_changed_out_of_sync_to_get_inode = true;
         return 0;
     }
     CATCH_TAIL
@@ -533,6 +552,7 @@ int do_mknod (const char * path, const mode_t mode, const dev_t device)
         header.attributes.st_dev = device;
         inode.save_header(header);
         content_changed_out_of_sync_to_fstat = true;
+        content_changed_out_of_sync_to_get_inode = true;
         return 0;
     }
     CATCH_TAIL;

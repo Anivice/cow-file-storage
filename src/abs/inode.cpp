@@ -30,13 +30,21 @@
 
 filesystem::inode_t::inode_header_t filesystem::inode_t::unblocked_get_header()
 {
+    if (const auto it = fs.stat_temp_list.find(inode_id); it != fs.stat_temp_list.end()) {
+        return inode_header_t{ .attributes = it->second };
+    }
+
     inode_header_t header{};
     fs.read_block(inode_id, &header, sizeof(header), 0);
+    auto_clean(fs.stat_temp_list);
+    fs.stat_temp_list[inode_id] = header.attributes;
     return header;
 }
 
 void filesystem::inode_t::unblocked_save_header(const inode_header_t header)
 {
+    auto_clean(fs.stat_temp_list);
+    fs.stat_temp_list[inode_id] = header.attributes;
     fs.write_block(inode_id, &header, sizeof(header), 0, true);
 }
 
@@ -117,6 +125,9 @@ void filesystem::inode_t::unlink_self()
     unlink_blocks(level2_blocks);
     unlink_blocks(level3_blocks);
     unlink_block(inode_id);
+    if (const auto it = fs.stat_temp_list.find(inode_id); it != fs.stat_temp_list.end()) {
+        fs.stat_temp_list.erase(it);
+    }
 }
 
 struct block_mapping_tail_t {
@@ -692,6 +703,8 @@ uint64_t filesystem::directory_t::get_inode(const std::string & name)
                     child = new_inode;
                     // update dentry
                 }
+
+                (void)fs.make_inode<inode_t>(child).get_header();
             }
 
             save_dentries(children);
@@ -785,6 +798,7 @@ void filesystem::directory_t::reset_as(const std::string & name)
     snapshot_block_attr.frozen = 0;
     snapshot_block_attr.links = 1;
     fs.set_attr(0, snapshot_block_attr);
+    fs.stat_temp_list.clear();
 }
 
 void filesystem::directory_t::snapshot(const std::string & name)
@@ -833,6 +847,7 @@ void filesystem::directory_t::snapshot(const std::string & name)
 
     // freeze
     fs.freeze_block();
+    fs.stat_temp_list.clear();
 }
 
 filesystem::inode_t filesystem::directory_t::create_dentry(const std::string & name, const mode_t mode)

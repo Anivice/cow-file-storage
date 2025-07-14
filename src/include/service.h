@@ -83,6 +83,7 @@ class filesystem
     basic_io_t basic_io;
     std::unique_ptr < block_io_t > block_io;
     std::unique_ptr < blk_manager > block_manager;
+    std::map < uint64_t, struct stat > stat_temp_list;
 
     uint64_t unblocked_allocate_new_block();
     void unblocked_deallocate_block(uint64_t data_field_block_id);
@@ -126,6 +127,7 @@ public:
         const uint64_t block_max_entries;
 
     public:
+        [[nodiscard]] uint64_t get_inode_id() const { return inode_id; }
         static timespec get_current_time()
         {
             timespec ts{};
