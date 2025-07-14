@@ -25,16 +25,27 @@
 #include "helper/cpp_assert.h"
 #include "helper/log.h"
 
+#define MAX_CACHE_INODE_SIZE (65535)
+#define auto_clean(map) if ((map).size() > MAX_CACHE_INODE_SIZE) { (map).clear(); }
+
 filesystem::inode_t::inode_header_t filesystem::inode_t::unblocked_get_header()
 {
+    if (fs.stat_map_cache.contains(inode_id)) {
+        return inode_header_t{ .attributes = fs.stat_map_cache.at(inode_id) };
+    }
+
     inode_header_t header{};
     fs.read_block(inode_id, &header, sizeof(header), 0);
+    auto_clean(fs.stat_map_cache);
+    fs.stat_map_cache[inode_id] = header.attributes;
     return header;
 }
 
 void filesystem::inode_t::unblocked_save_header(const inode_header_t header)
 {
     fs.write_block(inode_id, &header, sizeof(header), 0, true);
+    auto_clean(fs.stat_map_cache);
+    fs.stat_map_cache[inode_id] = header.attributes;
 }
 
 std::vector < uint64_t > filesystem::inode_t::get_inode_block_pointers()
@@ -305,8 +316,7 @@ void filesystem::inode_t::redirect_3rd_level_block(const uint64_t old_data_field
     auto try_save = [&](uint64_t & pointer, const std::vector<uint64_t> & data)->bool
     {
         // 1. check level 2 block, see if it's frozen
-        auto this_level_blk_ptr_attr = fs.get_attr(pointer);
-        if (!this_level_blk_ptr_attr.frozen) {
+        if (auto this_level_blk_ptr_attr = fs.get_attr(pointer); !this_level_blk_ptr_attr.frozen) {
             save_pointer_to_block(pointer, data);
             return false;
         }
@@ -431,8 +441,6 @@ std::vector<uint64_t> filesystem::inode_t::linearized_level2_pointers()
 uint64_t filesystem::inode_t::read(void *buff, uint64_t size, const uint64_t offset)
 {
     auto header = unblocked_get_header();
-    auto inode_blk_attr = fs.get_attr(inode_id);
-
     if (header.attributes.st_size == 0) {
         return 0;
     }
@@ -491,7 +499,7 @@ uint64_t filesystem::inode_t::write(const void * buff, uint64_t size, const uint
         size = header.attributes.st_size - offset;
     }
 
-    header.attributes.st_atim = header.attributes.st_mtim = header.attributes.st_mtim = get_current_time();
+    header.attributes.st_atim = header.attributes.st_ctim = header.attributes.st_mtim = get_current_time();
     unblocked_save_header(header);
 
     const auto level3_blocks = linearized_level3_pointers();
@@ -512,6 +520,7 @@ uint64_t filesystem::inode_t::write(const void * buff, uint64_t size, const uint
         attr.frozen = 0;
         attr.links = 0;
         attr.cow_refresh_count = 0;
+        attr.newly_allocated_thus_no_cow = 1;
         fs.set_attr(target_first_block, attr);
 
         // copy block data
@@ -579,28 +588,37 @@ uint64_t filesystem::inode_t::level3::mkblk(const bool storage)
         .type = (storage ? STORAGE_TYPE : POINTER_TYPE),
         .type_backup = 0,
         .cow_refresh_count = 0,
+        .newly_allocated_thus_no_cow = 1,
         .links = 1,
     };
-    fs.set_attr(new_block_id, pointer_attributes);
     std::vector<uint8_t> block_data_empty;
     block_data_empty.resize(block_size);
     std::memset(block_data_empty.data(), 0, block_size);
     fs.write_block(new_block_id, block_data_empty.data(), block_size, 0, false);
+    fs.set_attr(new_block_id, pointer_attributes); // update (still) as no-COW on new
     return new_block_id;
 }
 
 std::map < std::string, uint64_t > filesystem::directory_t::list_dentries()
 {
     static_assert(sizeof(dentry_t) == CFS_MAX_FILENAME_LENGTH + sizeof(uint64_t));
-    const auto header = get_header();
-    const uint64_t dentry_count = header.attributes.st_size / sizeof(dentry_t);
+    if (fs.directory_entries_map_cache.contains(inode_id)) {
+        return fs.directory_entries_map_cache.at(inode_id);
+    }
+
+    const auto [ attributes ] = get_header();
+    const uint64_t dentry_count = attributes.st_size / sizeof(dentry_t);
     std::map < std::string, uint64_t > ret;
     for (uint64_t i = 0; i < dentry_count; i++) {
         dentry_t dentry{};
         inode_t::read(&dentry, sizeof(dentry), i * sizeof(dentry));
         ret.emplace(dentry.name, dentry.inode_id);
+        // more often than not, you are reading attributes as well
+        (void)fs.make_inode<inode_t>(dentry.inode_id).get_header();
     }
 
+    auto_clean(fs.directory_entries_map_cache);
+    fs.directory_entries_map_cache.emplace(inode_id, ret);
     return ret;
 }
 
@@ -646,6 +664,10 @@ void filesystem::directory_t::save_dentries(const std::map < std::string, uint64
             offset += inode_t::write(&dentry, sizeof(dentry), offset);
         }
     }
+
+    // update cache
+    auto_clean(fs.directory_entries_map_cache);
+    fs.directory_entries_map_cache[inode_id] = dentries;
 }
 
 uint64_t filesystem::directory_t::get_inode(const std::string & name)
@@ -738,7 +760,7 @@ void filesystem::directory_t::reset_as(const std::string & name)
     std::vector<uint8_t> snapshot_inode_data;
     snapshot_inode_data.resize(block_size);
     fs.read_block(snapshot_root_id, snapshot_inode_data.data(), block_size, 0);
-    fs.write_block(0, snapshot_inode_data.data(), block_size, 0, true);
+    fs.write_block(0, snapshot_inode_data.data(), block_size, 0, false);
 
     // update volume root inode header with proper info
     auto [ root_inode_from_snapshot_data ] = snapshot_inode.get_header();

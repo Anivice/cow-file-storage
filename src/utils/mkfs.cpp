@@ -125,7 +125,7 @@ cfs_head_t make_head(const sector_t sectors, const uint64_t block_size, const st
     head.static_info.blocks            = sectors / head.static_info.block_over_sector;
     std::strncpy(head.static_info.label, label.c_str(), sizeof(head.static_info.label));
     const uint64_t body_size           = head.static_info.blocks - 2;     // head & tail
-    const uint64_t journaling_section_size= std::max<uint64_t>(body_size / 10, 32);
+    const uint64_t journaling_section_size= std::max<uint64_t>(body_size / 100, 32);
     assert_throw(body_size > journaling_section_size, "Not enough space");
 
     const uint64_t left_over  = body_size - journaling_section_size;

@@ -205,8 +205,18 @@ int fsck_main(int argc, char **argv)
                                                             << "<" << std::setw(zeros) << std::setfill('0') << i << "-P-"
                                                             << std::setw(3) << std::setfill('0') << blk_attr.links << ">";
                             break;
-                            default: std::cout << color::color(1,0,1) << frozen_color
-                                                << "<" << std::setw(zeros) << std::setfill('0') << i << "-R-###>";
+                            default: {
+                                char t = 0;
+                                switch (blk_attr.type_backup) {
+                                    case INDEX_TYPE: t = 'I'; break;
+                                    case STORAGE_TYPE: t = 'S'; break;
+                                    case POINTER_TYPE: t = 'P'; break;
+                                    default: t = 'R'; break;
+                                }
+                                std::cout << color::color(1,0,1) << frozen_color
+                                          << "<" << std::setw(zeros) << std::setfill('0') << i << "-"
+                                          << t << "-###>";
+                            }
                             break;
                         }
                         std::cout << color::no_color();

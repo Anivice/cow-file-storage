@@ -82,17 +82,17 @@ if ("X${CMAKE_BUILD_TYPE}" STREQUAL "XDebug")
             -Wl,-z,relro -Wl,-z,now
     )
 
-    list(APPEND compiler_options
-            -fsanitize=address
-            -fsanitize=undefined
-    )
-
-    list(APPEND linker_options
-            -fsanitize=address
-            -fsanitize=undefined
-            -lasan
-            -lubsan
-    )
+#    list(APPEND compiler_options
+#            -fsanitize=address
+#            -fsanitize=undefined
+#    )
+#
+#    list(APPEND linker_options
+#            -fsanitize=address
+#            -fsanitize=undefined
+#            -lasan
+#            -lubsan
+#    )
 
 #    list(APPEND compiler_options
 #            -fsanitize=thread
@@ -120,6 +120,9 @@ else ()
             -ffunction-sections
             -fno-stack-protector
             -Wl,-z,relro -Wl,-z,now
+#            -fprofile-arcs
+#            -ftest-coverage
+            # -fbranch-probabilities
 #            -s
     )
 
@@ -136,6 +139,8 @@ else ()
             -Wl,--gc-sections
             -fno-stack-protector
             -Wl,-z,relro -Wl,-z,now
+#            -fprofile-arcs
+#            -ftest-coverage
 #            -s
     )
 

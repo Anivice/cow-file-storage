@@ -58,6 +58,7 @@ uint64_t filesystem::unblocked_allocate_new_block()
     try {
         new_block_id = block_manager->allocate_block();
     } catch (...) { }
+
     if (new_block_id != UINT64_MAX) {
         block_manager->journal->push_action(actions::ACTION_TRANSACTION_ALLOCATE_BLOCK, new_block_id);
     }
@@ -90,7 +91,19 @@ uint64_t filesystem::unblocked_allocate_new_block()
                 return lhs.second < rhs.second;
             }); // sort it
 
-            block_manager->free_block(cow_blocks.front().first); // free the smallest refresher
+            int lowest_refresh_count = INT_MAX;
+            for (const auto & refresh : cow_blocks | std::views::values) {
+                if (lowest_refresh_count > refresh) {
+                    lowest_refresh_count = refresh;
+                }
+            }
+
+            for (const auto & [id, refresh] : cow_blocks) {
+                if (refresh <= lowest_refresh_count) {
+                    block_manager->free_block(id);
+                }
+            }
+
             try { // try again
                 new_block_id = block_manager->allocate_block();
                 block_manager->journal->push_action(actions::ACTION_TRANSACTION_ALLOCATE_BLOCK, new_block_id);
@@ -113,6 +126,7 @@ uint64_t filesystem::unblocked_allocate_new_block()
         .type = COW_REDUNDANCY_TYPE,
         .type_backup = 0,
         .cow_refresh_count = 0,
+        .newly_allocated_thus_no_cow = 1,
         .links = 0
     });
 
@@ -123,12 +137,17 @@ void filesystem::unblocked_deallocate_block(const uint64_t data_field_block_id)
 {
     assert_short(data_field_block_id != 0);
     // check frozen status
-    if (block_manager->get_attr(data_field_block_id).frozen) {
+    const auto attr = block_manager->get_attr(data_field_block_id);
+    if (attr.frozen) {
         return;
     }
 
-    auto old_block = block_manager->safe_get_block(data_field_block_id); // and the old block
+    if (attr.type == COW_REDUNDANCY_TYPE) {
+        block_manager->free_block(data_field_block_id); // request COW block free, just free the block
+        return;
+    }
 
+    auto old_block = block_manager->safe_get_block(data_field_block_id); // get the old block
     try {
         const auto new_block_id = unblocked_allocate_new_block();
         auto new_block = block_manager->safe_get_block(new_block_id); // get a new block
@@ -137,13 +156,13 @@ void filesystem::unblocked_deallocate_block(const uint64_t data_field_block_id)
         old_block_data.resize(block_manager->block_size); // allocate space
         old_block->get(old_block_data.data(), block_manager->block_size, 0); // copy from old
         ACTION_START(actions::ACTION_TRANSACTION_DEALLOCATE_BLOCK,
-            data_field_block_id, cfs_blk_attr_t_to_uint16(block_manager->get_attr(data_field_block_id)),
+            data_field_block_id, cfs_blk_attr_t_to_uint16(attr),
             new_block_id, old_block->crc64());
-        const cfs_blk_attr_t old_attr = block_manager->get_attr(data_field_block_id); // get attr of old block
+        const cfs_blk_attr_t old_attr = attr; // get attr of old block
         cfs_blk_attr_t new_attr = old_attr; // copy over
         new_attr.type = COW_REDUNDANCY_TYPE; // reset type to cow
         new_attr.type_backup = old_attr.type; // copy the old block type to the backup area
-        new_attr.cow_refresh_count = 7; // 0111, allocation will seek the smallest cow_refresh_count to deallocate before allocate new blocks
+        new_attr.cow_refresh_count = 3; // 0011, allocation will seek the smallest cow_refresh_count to deallocate before allocate new blocks
         block_manager->set_attr(new_block_id, new_attr); // set the new block as a COW block in attributes
         new_block->update(old_block_data.data(), block_manager->block_size, 0); // to new block
         block_manager->free_block(data_field_block_id); // then, delete the old one
@@ -166,23 +185,32 @@ uint64_t filesystem::unblocked_read_block(const uint64_t data_field_block_id, vo
     return size;
 }
 
-uint64_t filesystem::unblocked_write_block(const uint64_t data_field_block_id, const void * buff, uint64_t size, const uint64_t offset, const bool cow_active)
+uint64_t filesystem::unblocked_write_block(const uint64_t data_field_block_id, const void * buff, uint64_t size, const uint64_t offset, bool cow_active)
 {
     if (offset > block_manager->block_size) return 0;
     if (offset + size > block_manager->block_size) size = block_manager->block_size - offset;
     auto data_block = block_manager->safe_get_block(data_field_block_id);
     uint64_t new_block = UINT64_MAX;
+    auto attr = block_manager->get_attr(data_field_block_id);
 
-    if (block_manager->get_attr(data_field_block_id).frozen)
+    if (attr.frozen)
     {
         throw fs_error::filesystem_frozen_block_protection("");
     }
-    else if (cow_active)
+
+    // disable COW on new blocks, if COW is being enforced
+    if (cow_active && attr.newly_allocated_thus_no_cow) {
+        cow_active = false;
+        attr.newly_allocated_thus_no_cow = 0;
+        block_manager->set_attr(data_field_block_id, attr);
+    }
+
+    if (cow_active)
     {
         try {
             new_block = unblocked_allocate_new_block();
         } catch (fs_error::filesystem_space_depleted &) {
-            data_block->update((uint8_t*)buff, size, offset);
+            data_block->update(static_cast<const uint8_t *>(buff), size, offset);
             return size;
         }
 
@@ -194,18 +222,18 @@ uint64_t filesystem::unblocked_write_block(const uint64_t data_field_block_id, c
         new_cow->update(old_block_data.data(), block_manager->block_size, 0);
         auto old_attr = block_manager->get_attr(data_field_block_id);
         old_attr.type_backup = old_attr.type;
-        old_attr.cow_refresh_count = 7;
+        old_attr.cow_refresh_count = 3;
         old_attr.type = COW_REDUNDANCY_TYPE;
         block_manager->set_attr(new_block, old_attr);
         data_block->update((uint8_t*)buff, size, offset);
         ACTION_END(actions::ACTION_TRANSACTION_MODIFY_DATA_FIELD_BLOCK_CONTENT);
         return size;
-    } else {
-        ACTION_START(actions::ACTION_TRANSACTION_MODIFY_DATA_FIELD_BLOCK_CONTENT, data_field_block_id, UINT64_MAX, 0, 0);
-        data_block->update((uint8_t*)buff, size, offset);
-        return size;
-        ACTION_END(actions::ACTION_TRANSACTION_MODIFY_DATA_FIELD_BLOCK_CONTENT);
     }
+
+    ACTION_START(actions::ACTION_TRANSACTION_MODIFY_DATA_FIELD_BLOCK_CONTENT, data_field_block_id, UINT64_MAX, 0, 0);
+    data_block->update((uint8_t*)buff, size, offset);
+    ACTION_END(actions::ACTION_TRANSACTION_MODIFY_DATA_FIELD_BLOCK_CONTENT);
+    return size;
 }
 
 void filesystem::unblocked_delink_block(const uint64_t data_field_block_id)
@@ -445,7 +473,21 @@ void filesystem::sync()
 
 struct statvfs filesystem::fstat()
 {
-    const auto free = block_manager->free_blocks();
+    uint64_t allocated = 0;
+    for (uint64_t i = 0; i < block_manager->blk_count; i++)
+    {
+        if (block_manager->block_allocated(i))
+        {
+            if (const auto attr = block_manager->get_attr(i);
+                attr.type != COW_REDUNDANCY_TYPE)
+            {
+                allocated++;
+            }
+        }
+    }
+
+    const auto free = block_manager->blk_count - allocated;
+
     const struct statvfs ret = {
         .f_bsize = block_manager->block_size,
         .f_frsize = block_manager->block_size,

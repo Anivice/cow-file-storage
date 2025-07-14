@@ -56,10 +56,12 @@ block_io_t::block_io_t(basic_io_t & io, const bool read_only_fs) : io(io)
     struct sysinfo info{};
     if (sysinfo(&info) != 0) {
         perror("sysinfo");
-        max_cached_block_number = (512 * 1024 * 1024 / cfs_head.static_info.block_size);
+        max_cached_block_number = (64 * 1024 * 1024 / cfs_head.static_info.block_size);
     } else {
         max_cached_block_number = static_cast<uint64_t>(static_cast<double>(info.totalram) * 0.10
             / static_cast<double>(cfs_head.static_info.block_size));
+        max_cached_block_number = std::min(max_cached_block_number,
+            64 * 1024 * 1024 / cfs_head.static_info.block_size);
     }
 
     // debug_log("Cache size: ", max_cached_block_number, " blocks");
@@ -91,6 +93,7 @@ void block_io_t::sync()
 block_io_t::block_data_t & block_io_t::unblocked_at(const uint64_t index)
 {
     assert_short(index < cfs_head.static_info.blocks);
+    access_frequencies[index]++;
     if (block_cache.contains(index)) {
         auto & ret = *block_cache.at(index);
         if (index == 0 || index == cfs_head.static_info.blocks - 1) {
@@ -105,18 +108,24 @@ block_io_t::block_data_t & block_io_t::unblocked_at(const uint64_t index)
         return *ret;
     }
 
-    if (block_cache.size() == max_cached_block_number)
+    if (block_cache.size() >= max_cached_block_number)
     {
-        std::vector<uint64_t> pending_for_deletion;
-        for (const auto & cached_block : block_cache) {
-            if (!(*(*cached_block.second)).in_use) {
-                pending_for_deletion.push_back(cached_block.first);
+        std::vector < std::pair < uint64_t, uint64_t > > pending_for_deletion;
+        for (const auto &[id, data] : block_cache) {
+            if (!(*data)->in_use) {
+                pending_for_deletion.emplace_back(id, access_frequencies[id]);
             }
         }
 
-        for (const auto & cached_block : pending_for_deletion) {
-            // debug_log("Freeing cached block ", cached_block);
+        std::ranges::sort(pending_for_deletion,
+            [](const std::pair < uint64_t, uint64_t > & a, const std::pair < uint64_t, uint64_t > & b)->bool {
+            return a.second < b.second;
+        });
+
+        pending_for_deletion.resize((pending_for_deletion.size() / 3) * 2);
+        for (const auto & cached_block : pending_for_deletion | std::views::keys) {
             block_cache.erase(cached_block);
+            access_frequencies.erase(cached_block);
         }
     }
 

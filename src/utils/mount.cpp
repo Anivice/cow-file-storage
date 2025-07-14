@@ -23,6 +23,7 @@
 #include <atomic>
 #include <algorithm>
 #include <sys/ioctl.h>
+#include <pthread.h>
 #include "service.h"
 #include "helper/log.h"
 #include "helper/arg_parser.h"
@@ -38,12 +39,18 @@ extern "C" struct snapshot_ioctl_msg {
 #define CREATE      (0)
 #define ROLLBACKTO  (1)
 
+inline void set_thread_name(const char * name)
+{
+    pthread_setname_np(pthread_self(), name);
+}
+
 namespace mount {
     static std::string filesystem_path;
     static std::string filesystem_mount_destination;
 
     static int fuse_do_getattr (const char *path, struct stat *stbuf)
     {
+        set_thread_name("fuse_do_getattr");
         return do_getattr(path, stbuf);
     }
 
@@ -53,6 +60,7 @@ namespace mount {
                     off_t,
                     fuse_file_info *)
     {
+        set_thread_name("fuse_do_readdir");
         std::vector<std::string> vector_buffer;
         const int status = do_readdir(path, vector_buffer);
         if (status != 0) return status;
@@ -63,80 +71,99 @@ namespace mount {
     }
 
     static int fuse_do_mkdir (const char * path, const mode_t mode) {
+        set_thread_name("fuse_do_mkdir");
         return do_mkdir(path, mode);
     }
 
     static int fuse_do_chmod (const char * path, const mode_t mode) {
+        set_thread_name("fuse_do_chmod");
         return do_chmod(path, mode);
     }
 
     static int fuse_do_chown (const char * path, const uid_t uid, const gid_t gid) {
+        set_thread_name("fuse_do_chown");
         return do_chown(path, uid, gid);
     }
 
     static int fuse_do_create (const char * path, const mode_t mode, fuse_file_info *) {
+        set_thread_name("fuse_do_create");
         return do_create(path, mode);
     }
 
     static int fuse_do_flush (const char * path, fuse_file_info *) {
+        set_thread_name("fuse_do_flush");
         return do_flush(path);
     }
 
     static int fuse_do_release (const char * path, fuse_file_info *) {
+        set_thread_name("fuse_do_release");
         return do_release(path);
     }
 
     static int fuse_do_access (const char * path, const int mode) {
+        set_thread_name("fuse_do_access");
         return do_access(path, mode);
     }
 
     static int fuse_do_open (const char * path, fuse_file_info *) {
+        set_thread_name("fuse_do_open");
         return do_open(path);
     }
 
     static int fuse_do_read (const char *path, char *buffer, const size_t size, const off_t offset, fuse_file_info *) {
+        set_thread_name("fuse_do_read");
         return do_read(path, buffer, size, offset);
     }
 
     static int fuse_do_write (const char * path, const char * buffer, const size_t size, const off_t offset, fuse_file_info *) {
+        set_thread_name("fuse_do_write");
         return do_write(path, buffer, size, offset);
     }
 
     static int fuse_do_utimens (const char * path, const timespec tv[2]) {
+        set_thread_name("fuse_do_utimens");
         return do_utimens(path, tv);
     }
 
     static int fuse_do_unlink (const char * path) {
+        set_thread_name("fuse_do_unlink");
         return do_unlink(path);
     }
 
     static int fuse_do_rmdir (const char * path) {
+        set_thread_name("fuse_do_rmdir");
         return do_rmdir(path);
     }
 
     static int fuse_do_fsync (const char * path, int, fuse_file_info *) {
+        set_thread_name("fuse_do_fsync");
         return do_fsync(path, 0);
     }
 
     static int fuse_do_releasedir (const char * path, fuse_file_info *) {
+        set_thread_name("fuse_do_releasedir");
         return do_releasedir(path);
     }
 
     static int fuse_do_fsyncdir (const char * path, int, fuse_file_info *) {
+        set_thread_name("fuse_do_fsyncdir");
         return do_fsyncdir(path, 0);
     }
 
     static int fuse_do_truncate (const char * path, const off_t size) {
+        set_thread_name("fuse_do_truncate");
         return do_truncate(path, size);
     }
 
     static int fuse_do_symlink (const char * path, const char * target) {
+        set_thread_name("fuse_do_symlink");
         return do_symlink(path, target);
     }
 
     static int fuse_do_ioctl (const char *, const int cmd, void *,
         fuse_file_info *, const unsigned int flags, void * data)
     {
+        set_thread_name("fuse_do_ioctl");
         if (!(flags & FUSE_IOCTL_DIR)) {
             return -ENOTTY;
         }
@@ -155,41 +182,50 @@ namespace mount {
     }
 
     static int fuse_do_rename (const char * path, const char * name) {
+        set_thread_name("fuse_do_rename");
         return do_rename(path, name);
     }
 
     static int fuse_do_fallocate(const char * path, const int mode, const off_t offset, const off_t length, fuse_file_info *) {
+        set_thread_name("fuse_do_fallocate");
         return do_fallocate(path, mode, offset, length);
     }
 
     static int fuse_do_fgetattr (const char * path, struct stat * statbuf, fuse_file_info *) {
+        set_thread_name("fuse_do_fgetattr");
         return fuse_do_getattr(path, statbuf);
     }
 
     static int fuse_do_ftruncate (const char * path, const off_t length, fuse_file_info *) {
+        set_thread_name("fuse_do_ftruncate");
         return fuse_do_truncate(path, length);
     }
 
     static int fuse_do_readlink (const char * path, char * buffer, const size_t size) {
+        set_thread_name("fuse_do_readlink");
         return do_readlink(path, buffer, size);
     }
 
     void fuse_do_destroy (void *) {
+        set_thread_name("fuse_do_destroy");
         do_destroy();
     }
 
     void* fuse_do_init (fuse_conn_info *conn)
     {
+        set_thread_name("fuse_do_init");
         conn->want |= FUSE_CAP_BIG_WRITES | FUSE_CAP_IOCTL_DIR;
         return nullptr;
     }
 
     static int fuse_do_mknod (const char * path, const mode_t mode, const dev_t device) {
+        set_thread_name("fuse_do_mknod");
         return do_mknod(path, mode, device);
     }
 
     int fuse_statfs (const char *, struct statvfs * status)
     {
+        set_thread_name("fuse_statfs");
         *status = do_fstat();
         return 0;
     }

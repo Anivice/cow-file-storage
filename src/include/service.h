@@ -83,11 +83,13 @@ class filesystem
     basic_io_t basic_io;
     std::unique_ptr < block_io_t > block_io;
     std::unique_ptr < blk_manager > block_manager;
+    std::map < uint64_t, std::map < std::string, uint64_t > /* dentries */ > directory_entries_map_cache;
+    std::map < uint64_t, struct stat > stat_map_cache;
 
     uint64_t unblocked_allocate_new_block();
     void unblocked_deallocate_block(uint64_t data_field_block_id);
     uint64_t unblocked_read_block(uint64_t data_field_block_id, void * buff, uint64_t size, uint64_t offset);
-    uint64_t unblocked_write_block(uint64_t data_field_block_id, const void * buff, uint64_t size, uint64_t offset, bool cow_active = true);
+    uint64_t unblocked_write_block(uint64_t data_field_block_id, const void * buff, uint64_t size, uint64_t offset, bool cow_active);
 
     uint64_t allocate_new_block() {
         return unblocked_allocate_new_block();
@@ -101,9 +103,9 @@ class filesystem
         return unblocked_read_block(data_field_block_id, buff, size, offset);
     }
 
-    uint64_t write_block(const uint64_t data_field_block_id, const void * buff, const uint64_t size, const uint64_t offset, const bool cow)
+    uint64_t write_block(const uint64_t data_field_block_id, const void * buff, const uint64_t size, const uint64_t offset, const bool cow_active)
     {
-        return unblocked_write_block(data_field_block_id, buff, size, offset, cow);
+        return unblocked_write_block(data_field_block_id, buff, size, offset, cow_active);
     }
 
     cfs_blk_attr_t get_attr(uint64_t data_field_block_id);

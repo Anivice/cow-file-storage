@@ -103,6 +103,7 @@ private:
     cfs_head_t cfs_head{};                  /// in memory head
     bool filesystem_dirty_on_mount_;    /// if filesystem is dirty on mount
     std::map < uint64_t /* block id */, std::unique_ptr < block_data_ptr_t > > block_cache; /// cache
+    std::map < uint64_t /* block id */, uint64_t /* access time */ > access_frequencies;
     uint64_t max_cached_block_number;   /// max cached block allowed in memory
     bool read_only_fs;
 

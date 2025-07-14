@@ -3,6 +3,7 @@
 #include <memory>
 #include <sstream>
 #include <functional>
+#include <atomic>
 #include "operations.h"
 #include "service.h"
 #include "helper/log.h"
@@ -70,7 +71,6 @@ int do_getattr (const char *path, struct stat *stbuf)
     try {
         std::lock_guard lock(operations_mutex);
         auto inode = get_inode_by_path<filesystem::inode_t>(splitString(path));
-        auto header = inode.get_header();
         *stbuf = inode.get_header().attributes;
         return 0;
     }
@@ -374,6 +374,7 @@ int do_symlink (const char * path, const char * target)
 int do_snapshot(const char * name)
 {
     try {
+        std::lock_guard lock(operations_mutex);
         debug_log("Snapshot creation request, target at ", name);
         auto target_parent = splitString(name);
         const auto target = target_parent.back();
@@ -394,6 +395,7 @@ int do_snapshot(const char * name)
 int do_rollback(const char * name)
 {
     try {
+        std::lock_guard lock(operations_mutex);
         debug_log("Snapshot rollback request, target at ", name);
         auto target_parent = splitString(name);
         const auto target = target_parent.back();
@@ -520,7 +522,21 @@ int do_mknod (const char * path, const mode_t mode, const dev_t device)
     CATCH_TAIL;
 }
 
+struct statvfs statvfs_5s_interval_cache;
+std::chrono::time_point<std::chrono::system_clock> last_fstat_invoke_time;
+std::mutex do_fstat_unique_mutex;
+
 struct statvfs do_fstat()
 {
-    return filesystem_instance->fstat();
+    std::lock_guard lock_do_fstat(do_fstat_unique_mutex);
+    const auto now = std::chrono::system_clock::now();
+    if (const auto sec = std::chrono::duration_cast<std::chrono::seconds>(now - last_fstat_invoke_time).count(); sec > 5)
+    {
+        std::lock_guard lock(operations_mutex);
+        statvfs_5s_interval_cache = filesystem_instance->fstat();
+        last_fstat_invoke_time = now;
+        return statvfs_5s_interval_cache;
+    }
+
+    return statvfs_5s_interval_cache;
 }
