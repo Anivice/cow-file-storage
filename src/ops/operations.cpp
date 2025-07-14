@@ -11,6 +11,7 @@
 
 std::unique_ptr < filesystem > filesystem_instance;
 std::mutex operations_mutex;
+std::atomic_bool content_changed_out_of_sync_to_fstat = true;
 
 static std::vector<std::string> splitString(const std::string& s, const char delim = '/')
 {
@@ -105,6 +106,7 @@ int do_mkdir (const char * path, const mode_t mode)
         auto inode = get_inode_by_path<filesystem::directory_t>(path_vec);
         RETURN_EROFS_IF_INODE_IS_FROZEN(inode);
         inode.create_dentry(target, mode | S_IFDIR);
+        content_changed_out_of_sync_to_fstat = true;
         return 0;
     }
     CATCH_TAIL
@@ -122,6 +124,7 @@ int do_chown (const char * path, const uid_t uid, const gid_t gid)
         header.attributes.st_gid = gid;
         header.attributes.st_ctim = filesystem::inode_t::get_current_time();
         inode.save_header(header);
+        content_changed_out_of_sync_to_fstat = true;
         return 0;
     }
     CATCH_TAIL;
@@ -137,6 +140,7 @@ int do_chmod (const char * path, const mode_t mode)
         header.attributes.st_mode = mode;
         header.attributes.st_ctim = filesystem::inode_t::get_current_time();
         inode.save_header(header);
+        content_changed_out_of_sync_to_fstat = true;
         return 0;
     }
     CATCH_TAIL
@@ -156,6 +160,7 @@ int do_create (const char * path, const mode_t mode)
             return -EEXIST;
         } catch (...) {}
         inode.create_dentry(target, mode);
+        content_changed_out_of_sync_to_fstat = true;
         return 0;
     }
     CATCH_TAIL
@@ -230,6 +235,7 @@ int do_write (const char * path, const char * buffer, const size_t size, const o
         {
             inode.resize(size + offset);
         }
+        content_changed_out_of_sync_to_fstat = true;
         return static_cast<int>(inode.write(buffer, size, offset));
     }
     CATCH_TAIL
@@ -245,6 +251,7 @@ int do_utimens (const char * path, const timespec tv[2])
         header.attributes.st_atim = tv[0];
         header.attributes.st_mtim = tv[1];
         inode.save_header(header);
+        content_changed_out_of_sync_to_fstat = true;
         return 0;
     }
     CATCH_TAIL
@@ -268,6 +275,7 @@ int do_unlink (const char * path)
         }
 
         inode.unlink_inode(target);
+        content_changed_out_of_sync_to_fstat = true;
         return 0;
     }
     CATCH_TAIL
@@ -283,6 +291,7 @@ int do_rmdir (const char * path)
         auto inode = get_inode_by_path<filesystem::directory_t>(path_vec);
         const auto child = inode.get_inode(target);
         auto child_inode = filesystem_instance->make_inode<filesystem::inode_t>(child);
+        content_changed_out_of_sync_to_fstat = true;
         if (child_inode.get_inode_blk_attr().frozen == 2)
         {
             debug_log("Removing ALL snapshots");
@@ -349,6 +358,7 @@ int do_truncate (const char * path, const off_t size)
         auto inode = get_inode_by_path<filesystem::inode_t>(splitString(path));
         RETURN_EROFS_IF_INODE_IS_FROZEN(inode);
         inode.resize(size);
+        content_changed_out_of_sync_to_fstat = true;
         return 0;
     }
     CATCH_TAIL
@@ -366,6 +376,7 @@ int do_symlink (const char * path, const char * target)
         auto new_inode = inode.create_dentry(target_link, S_IFLNK | 0755);
         new_inode.resize(strlen(path));
         new_inode.write(path, strlen(path), 0);
+        content_changed_out_of_sync_to_fstat = true;
         return 0;
     }
     CATCH_TAIL
@@ -387,6 +398,7 @@ int do_snapshot(const char * name)
         auto root = get_inode_by_path<filesystem::directory_t>({});
         root.snapshot(target);
         filesystem_instance->sync();
+        content_changed_out_of_sync_to_fstat = true;
         debug_log("Snapshot creation completed for ", name);
         return 0;
     } CATCH_TAIL
@@ -408,6 +420,7 @@ int do_rollback(const char * name)
         root.reset_as(target);
         filesystem_instance->sync();
         debug_log("Filesystem rollback completed, history inode is ", name);
+        content_changed_out_of_sync_to_fstat = true;
         return 0;
     } CATCH_TAIL
 }
@@ -444,6 +457,7 @@ int do_rename (const char * path, const char * name)
         }
         target_dentries.emplace(target, index_node_id);
         target_parent_dir.save_dentries(target_dentries);
+        content_changed_out_of_sync_to_fstat = true;
         return 0;
     }
     CATCH_TAIL
@@ -460,6 +474,7 @@ int do_fallocate(const char * path, const int mode, const off_t offset, const of
         header.attributes.st_mode = mode | S_IFREG;
         header.attributes.st_ctim = filesystem::inode_t::get_current_time();
         inode.save_header(header);
+        content_changed_out_of_sync_to_fstat = true;
         return 0;
     }
     CATCH_TAIL
@@ -517,6 +532,7 @@ int do_mknod (const char * path, const mode_t mode, const dev_t device)
         auto header = new_inode.get_header();
         header.attributes.st_dev = device;
         inode.save_header(header);
+        content_changed_out_of_sync_to_fstat = true;
         return 0;
     }
     CATCH_TAIL;
@@ -530,11 +546,13 @@ struct statvfs do_fstat()
 {
     std::lock_guard lock_do_fstat(do_fstat_unique_mutex);
     const auto now = std::chrono::system_clock::now();
-    if (const auto sec = std::chrono::duration_cast<std::chrono::seconds>(now - last_fstat_invoke_time).count(); sec > 5)
+    if (const auto sec = std::chrono::duration_cast<std::chrono::seconds>(now - last_fstat_invoke_time).count();
+        sec > 5 && content_changed_out_of_sync_to_fstat)
     {
         std::lock_guard lock(operations_mutex);
         statvfs_5s_interval_cache = filesystem_instance->fstat();
         last_fstat_invoke_time = now;
+        content_changed_out_of_sync_to_fstat = false;
         return statvfs_5s_interval_cache;
     }
 

@@ -195,6 +195,7 @@ uint64_t filesystem::unblocked_write_block(const uint64_t data_field_block_id, c
 
     if (attr.frozen)
     {
+        error_log("filesystem_frozen_block_protection: ", data_field_block_id);
         throw fs_error::filesystem_frozen_block_protection("");
     }
 
@@ -420,6 +421,7 @@ void filesystem::set_attr(const uint64_t data_field_block_id, const cfs_blk_attr
 {
     const auto old_attr = block_manager->get_attr(data_field_block_id);
     if (old_attr.frozen) {
+        error_log("filesystem_frozen_block_protection: ", data_field_block_id);
         throw fs_error::filesystem_frozen_block_protection("Attempting to modify a frozen block");
         return;
     }
@@ -468,6 +470,7 @@ void filesystem::clear_frozen_all()
 
 void filesystem::sync()
 {
+    sync_commit_cache();
     block_io->sync();
 }
 
