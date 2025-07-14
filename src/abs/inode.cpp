@@ -101,10 +101,12 @@ void filesystem::inode_t::resize(const uint64_t new_size)
 
 void filesystem::inode_t::unlink_self()
 {
+    const auto level1_blocks = get_inode_block_pointers();
     const auto level2_blocks = linearized_level2_pointers();
     const auto level3_blocks = linearized_level3_pointers();
     auto unlink_block = [&](const uint64_t block_id)
     {
+        if (block_id == 0) return;
         fs.delink_block(block_id);
         const auto attr = fs.block_manager->get_attr(block_id);
         if (attr.frozen) {
@@ -124,6 +126,7 @@ void filesystem::inode_t::unlink_self()
 
     unlink_blocks(level2_blocks);
     unlink_blocks(level3_blocks);
+    unlink_blocks(level1_blocks);
     unlink_block(inode_id);
     if (const auto it = fs.stat_temp_list.find(inode_id); it != fs.stat_temp_list.end()) {
         fs.stat_temp_list.erase(it);
@@ -529,32 +532,36 @@ uint64_t filesystem::inode_t::write(const void * buff, uint64_t size, const uint
 
     auto block_redirect = [&](const uint64_t block_id)->uint64_t
     {
-        auto attr = fs.get_attr(block_id);
-        auto new_attr = attr;
-        // copy attributes
-        const uint64_t target_first_block = fs.allocate_new_block();
-        new_attr.frozen = 0;
-        new_attr.links = 1;
-        new_attr.cow_refresh_count = 0;
-        new_attr.newly_allocated_thus_no_cow = 1;
-        fs.set_attr(target_first_block, new_attr);
+        try {
+            auto attr = fs.get_attr(block_id);
+            auto new_attr = attr;
+            // copy attributes
+            const uint64_t target_first_block = fs.allocate_new_block();
+            new_attr.frozen = 0;
+            new_attr.links = 1;
+            new_attr.cow_refresh_count = 0;
+            new_attr.newly_allocated_thus_no_cow = 1;
+            fs.set_attr(target_first_block, new_attr);
 
-        // copy block data
-        std::vector<uint8_t> data;
-        data.resize(block_size);
-        fs.read_block(block_id, data.data(), block_size, 0);
-        fs.write_block(target_first_block, data.data(), block_size, 0, false);
+            // copy block data
+            std::vector<uint8_t> data;
+            data.resize(block_size);
+            fs.read_block(block_id, data.data(), block_size, 0);
+            fs.write_block(target_first_block, data.data(), block_size, 0, false);
 
-        // redirect block
-        redirect_3rd_level_block(block_id, target_first_block);
-        if (!attr.frozen) // not frozen? set original as a COW block
-        {
-            attr.type_backup = attr.type;
-            attr.type = COW_REDUNDANCY_TYPE;
-            fs.set_attr(block_id, attr);
+            // redirect block
+            redirect_3rd_level_block(block_id, target_first_block);
+            if (!attr.frozen) // not frozen? set original as a COW block
+            {
+                attr.type_backup = attr.type;
+                attr.type = COW_REDUNDANCY_TYPE;
+                fs.set_attr(block_id, attr);
+            }
+
+            return target_first_block;
+        } catch (fs_error::filesystem_space_depleted&) {
+            return block_id;
         }
-
-        return target_first_block;
     };
 
     uint64_t g_wr_off = 0;
@@ -634,6 +641,11 @@ std::map < std::string, uint64_t > filesystem::directory_t::list_dentries()
 
 void filesystem::directory_t::save_dentries(const std::map < std::string, uint64_t > & dentries)
 {
+    if (dentries.empty()) {
+        resize(0);
+        return;
+    }
+
     auto original_dentries = list_dentries();
     // easy diff, detect appending
     bool appending = true;
