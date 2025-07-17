@@ -57,7 +57,7 @@ void basic_io_t::close()
     }
 }
 
-void basic_io_t::read(sector_data_t & buffer, const sector_t sector)
+void basic_io_t::read(sector_data_t & buffer, const sector_t sector) const
 {
     if (sector >= file_sectors) {
         throw runtime_error("Error reading sector");

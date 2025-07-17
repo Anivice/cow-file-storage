@@ -51,7 +51,7 @@ private:
         void sync();                        /// write to disk
         [[nodiscard]] bool is_out_of_sync() const { return out_of_sync; } /// check if update() is called
         void not_in_use() { in_use = false; }
-        uint64_t crc64() { CRC64 crc64; crc64.update(data_.data(), data_.size()); return crc64.get_checksum(); }
+        uint64_t crc64() const { CRC64 crc64; crc64.update(data_.data(), data_.size()); return crc64.get_checksum(); }
         friend class block_io_t;
     };
 
